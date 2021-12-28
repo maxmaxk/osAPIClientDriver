@@ -1,0 +1,302 @@
+{
+  "driver": {
+    "orangeScadaPort": 9006,
+    "orangeScadaHost": "localhost",
+    "ssl": true,
+    "uid": "1234"
+  },
+  "optionsScheme": {
+    "nodes": {
+      "modbusHost": {
+        "name": "Modbus Host",
+        "type": "varchar",
+        "currentValue": "testhost",
+        "uid": "modbusHost"
+      },
+      "modbusPort": {
+        "name": "Modbus Port",
+        "type": "number",
+        "minValue": 1,
+        "maxValue": 65535,
+        "currentValue": 502,
+        "uid": "modbusPort"
+      }
+    },
+    "devices": {
+      "modbusId": {
+        "type": "number",
+        "name": "Modbus ID",
+        "minValue": 1,
+        "maxValue": 254,
+        "currentValue": 1,
+        "uid": "modbusId"
+      },
+      "timeout": {
+        "type": "number",
+        "name": "Timeout",
+        "minValue": 1,
+        "maxValue": 60000,
+        "currentValue": 10000,
+        "uid": "timeout"
+      },
+      "multiWriteEnable": {
+        "type": "boolean",
+        "name": "Modbus multi-write mode enable",
+        "currentValue": true,
+        "uid": "multiWriteEnable"
+      }
+    },
+    "tags": {
+      "modbusVarType": {
+        "type": "select",
+        "name": "Modbus Var Type",
+        "selectValues": {
+          "Coil": "Coil",
+          "DiscreteInput": "Discrete Input",
+          "HoldingRegister": "Holding Register",
+          "InputRegister": "Input Register"
+        }
+      },
+      "modbusVarAddress": {
+        "name": "Modbus Var Address",
+        "type": "number",
+        "minValue": 0,
+        "maxValue": 65535
+      },
+      "modbusDisplayType": {
+        "type": "select",
+        "name": "Modbus Display Var Type",
+        "selectValues": {
+          "Int": "Int",
+          "UInt": "Unsigned Int",
+          "Long": "Longint",
+          "ULong": "Unsigned Longint",
+          "Float": "Float",
+          "Double": "Double"
+        }
+      },
+      "modbusBytesOrder": {
+        "types": "select",
+        "name": "Modbus bytes order",
+        "selectValues": {
+          "BE": "Big Endian",
+          "LE": "Little Endian",
+          "BES": "Big Endian Bytes Swap",
+          "LES": "Little Endian Bytes Swap"
+        }
+      }
+    }
+  },
+  "nodes": {
+    "1": {
+      "name": "ModbusNode",
+      "options": {
+        "modbusHost": {
+          "currentValue": "127.0.0.1"
+        },
+        "modbusPort": {
+          "currentValue": 502
+        }
+      }
+    },
+    "3": {
+      "name": "newNode",
+      "options": {
+        "modbusHost": {
+          "currentValue": "testhost"
+        },
+        "modbusPort": {
+          "currentValue": 502
+        }
+      }
+    }
+  },
+  "devices": {
+    "1": {
+      "name": "Modbus device 1xx",
+      "active": true,
+      "nodeUid": "1",
+      "options": {
+        "modbusId": {
+          "currentValue": 1
+        },
+        "timeout": {
+          "currentValue": 1000
+        },
+        "multiWriteEnable": {
+          "currentValue": true
+        }
+      },
+      "tags": {
+        "0": {
+          "name": "HoldReg",
+          "address": 1,
+          "type": "int",
+          "read": true,
+          "write": false,
+          "options": {
+            "modbusVarType": {
+              "currentValue": "HoldingRegister"
+            },
+            "modbusVarAddress": {
+              "currentValue": 1
+            },
+            "modbusDisplayType": {
+              "currentValue": "UInt"
+            },
+            "modbusBytesOrder": {
+              "currentValue": "BE"
+            }
+          }
+        },
+        "2": {
+          "name": "InputReg2",
+          "address": 2,
+          "type": "int",
+          "read": true,
+          "write": true,
+          "options": {
+            "modbusVarType": {
+              "currentValue": "HoldingRegister"
+            },
+            "modbusVarAddress": {
+              "currentValue": 2
+            },
+            "modbusDisplayType": {
+              "currentValue": "UInt"
+            },
+            "modbusBytesOrder": {
+              "currentValue": "BE"
+            }
+          }
+        },
+        "3": {
+          "name": "HoldingRegister1",
+          "options": {
+            "modbusVarType": {
+              "currentValue": "HoldingRegister"
+            },
+            "modbusVarAddress": {
+              "currentValue": 3
+            },
+            "modbusDisplayType": {
+              "currentValue": "Int"
+            }
+          },
+          "type": "int",
+          "address": 3,
+          "read": true,
+          "write": true
+        },
+        "4": {
+          "name": "newTag",
+          "options": {
+            "modbusVarType": {
+              "currentValue": "Coil"
+            },
+            "modbusVarAddress": {
+              "currentValue": 2
+            }
+          },
+          "type": "int",
+          "address": 4,
+          "read": true,
+          "write": true
+        },
+        "5": {
+          "name": "newTag",
+          "options": {
+            "modbusVarType": {
+              "currentValue": "Coil"
+            },
+            "mcodbusVarAddress": {
+              "currentValue": 3
+            }
+          },
+          "type": "int",
+          "address": 5,
+          "read": true,
+          "write": true
+        },
+        "6": {
+          "name": "newTag",
+          "options": {
+            "modbusVarType": {
+              "currentValue": "Coil"
+            },
+            "modbusVarAddress": {
+              "currentValue": 9
+            }
+          },
+          "type": "int",
+          "address": 3,
+          "read": true,
+          "write": true
+        },
+        "7": {
+          "name": "newTag",
+          "options": {
+            "modbusVarType": {
+              "currentValue": "Coil"
+            },
+            "modbusVarAddress": {
+              "currentValue": 308
+            }
+          },
+          "type": "int",
+          "address": 3,
+          "read": true,
+          "write": true
+        }
+      }
+    },
+    "2": {
+      "name": "Modbus device 2",
+      "active": true,
+      "nodeUid": "3",
+      "options": {
+        "modbusId": {
+          "currentValue": 88
+        },
+        "timeout": {
+          "currentValue": 10000
+        },
+        "multiWriteEnable": {
+          "currentValue": true
+        }
+      },
+      "tags": {
+        "1": {
+          "name": "InputReg1",
+          "address": 1,
+          "type": "int",
+          "read": true,
+          "write": false,
+          "options": {
+            "modbusVarType": {
+              "currentValue": "InputRegister"
+            },
+            "modbusVarAddress": {
+              "currentValue": 1
+            },
+            "modbusDisplayType": {
+              "currentValue": "Int"
+            }
+          }
+        }
+      }
+    },
+    "3": {
+      "name": "Modbus device 3",
+      "active": true,
+      "options": {
+        "modbusId": {
+          "currentValue": 3
+        },
+        "timeout": {
+          "currentValue": 10000
+        }
+      }
+    }
+  }
+}
