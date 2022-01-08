@@ -63,20 +63,20 @@ function setConfig(config) {
 
 // Error text constants
 
-const errServerConnectClosedTxt = 'Server connect closed';
+const errServerConnectClosedTxt 	= 'Server connect closed';
 const errServerConnectTxt 			= 'Server connect error';
 const errCmdNotRecognizedTxt 		= 'Command not recognized';
-const errIdNotFoundTxt 					= 'ID not found';
-const errJSONParseTxt						= 'Error JSON parse:';
+const errIdNotFoundTxt 				= 'ID not found';
+const errJSONParseTxt				= 'Error JSON parse:';
 const errOptionsNotFoundTxt			= 'Options not found';
 const errOptionsValidFailTxt		= 'Option value not valid';
 const errNameAbsentTxt		  		= 'Name is absent in request';
 const errIdAbsentTxt		  	  	= 'ID is absent in request';
-const errWrongTypeTxt						= 'Wrong type';
+const errWrongTypeTxt				= 'Wrong type';
 const errOptionIdAbsentTxt			= 'Option ID absent';
 const errOptionNameAbsentTxt		= 'Option name absent';
-const errSelectValuesAbsentTxt	= 'Select values absent';
-const errUidListTxt							= 'ID list read fail';
+const errSelectValuesAbsentTxt		= 'Select values absent';
+const errUidListTxt					= 'ID list read fail';
 
 class ObjList {
 	constructor(list, itemType, nodes){
@@ -385,10 +385,10 @@ let customDriver = new CustomDriver(nodeList, deviceList, config);
 
 // Message text constants
 
-const tryConnectTxt							= 'Try connect to server';
+const tryConnectTxt						= 'Try connect to server';
 const serverConnectedTxt 				= 'Server connected';
-const processExitTxt						= 'Process exit';
-const answerTxt									= 'Answer';
+const processExitTxt					= 'Process exit';
+const answerTxt							= 'Answer';
 const serverRequestTxt					= 'Server request:';
 const commandRequestTxt					= 'command request';
 
@@ -501,32 +501,32 @@ function parseRequest(data){
 
 function getHandler(cmd){
 	switch (cmd) {
-		case 'connect'		    			  : return connectServer;
-		case 'pingDriver'		    			: return pingDriver;
-		case 'getNodes' 		    			: return getNodes;
-		case 'pingNode'  		    			: return pingNode;
-		case 'getNode'   							: return getNode;
-		case 'setNode'   							: return setNode;
-		case 'addNode'   							: return addNode;
-		case 'deleteNode'   					: return deleteNode;
+		case 'connect'		    			: return connectServer;
+		case 'pingDriver'		    		: return pingDriver;
+		case 'getNodes' 		    		: return getNodes;
+		case 'pingNode'  		    		: return pingNode;
+		case 'getNode'   					: return getNode;
+		case 'setNode'   					: return setNode;
+		case 'addNode'   					: return addNode;
+		case 'deleteNode'   				: return deleteNode;
 		case 'getDevices'       			: return getDevices;
 		case 'pingDevice'       			: return pingDevice;
-		case 'getDevice' 							: return getDevice;
-		case 'setDevice' 							: return setDevice;
-		case 'addDevice' 							: return addDevice;
-		case 'deleteDevice' 					: return deleteDevice;
-		case 'getTags' 			    			: return getTags;
-		case 'getTag' 			    			: return getTag;
-		case 'setTag' 			    			: return setTag;
-		case 'addTag' 			    			: return addTag;
-		case 'deleteTag' 			    		: return deleteTag;
+		case 'getDevice' 					: return getDevice;
+		case 'setDevice' 					: return setDevice;
+		case 'addDevice' 					: return addDevice;
+		case 'deleteDevice' 				: return deleteDevice;
+		case 'getTags' 			    		: return getTags;
+		case 'getTag' 			    		: return getTag;
+		case 'setTag' 			    		: return setTag;
+		case 'addTag' 			    		: return addTag;
+		case 'deleteTag' 			    	: return deleteTag;
 		case 'getTagsValues' 	  			: return getTagsValues;
-		case 'getTagsValuesSubscribe'	: return getTagsValuesSubscribe;
+		case 'getTagsValuesSubscribe'		: return getTagsValuesSubscribe;
 		case 'setTagsValues' 	  			: return setTagsValues;
-	//	case 'getAlarms' 	      		: return getAlarms;
-	//	case 'setSubscriptionAlarm' : return setSubscriptionAlarm;
-		case 'getEvent' 						: return getEvent;
-	//	case 'getEvents' 						: return getEvents;
+	//	case 'getAlarms' 	      			: return getAlarms;
+	//	case 'setSubscriptionAlarm' 		: return setSubscriptionAlarm;
+		case 'getEvent' 					: return getEvent;
+	//	case 'getEvents' 					: return getEvents;
 	//	case 'getArchiveTag' 				: return getArchiveTag;
 		default: return null;
 	}

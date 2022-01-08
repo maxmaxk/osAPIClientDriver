@@ -53,14 +53,14 @@ const tlsServer = tls.createServer(options, (socket) => {
     if(transID == 19) socket.write('{"cmd":"setTag", "deviceUid":"1", "uid":"0", "name":"HoldReg", "transID": '+transID+', "options":[{"modbusVarType":"HoldingRegister"}]}');
     if(transID == 20) socket.write('{"cmd":"getTag", "transID": '+transID+'}');
     //if(transID == 21) socket.write('{"cmd":"addTag", "deviceUid":"1", "address":3, "type":"int", "read": false, "write": true,"transID": '+transID+', "name":"newTag", "options":[{"modbusVarType":"Coil"},{"modbusVarAddress":10}]}');
-  //  if(transID == 22) socket.write('{"cmd":"deleteTag", "deviceUid":"1", "uid":["3","4","5","6","7","8",0"9","10","11","12","13","14"], "transID": '+transID+'}');
+  //  if(transID == 22) socket.write('{"cmd":"deleteTag", "deviceUid":"1", "uid":["3","4","5","6","7","8","9","10","11","12","13","14"], "transID": '+transID+'}');
     if(transID == 21){
-      socket.write('{"cmd":"getTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":["0","2"]}\n');
+      socket.write('{"cmd":"getTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":["4","5"]}\n');
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":["4","5"]}\n');
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":["4","5"]}\n');
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID+', "deviceUid":"2", "tags":["1"]}');
     }
-    if(transID == 22) socket.write('{"cmd":"setTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":[{"0": 99}, {"2":101}]}');
+    if(transID == 22) socket.write('{"cmd":"setTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":[{"4": 0}, {"5": 0}]}');
   });
 });
 

@@ -133,16 +133,16 @@
           "address": 1,
           "type": "int",
           "read": true,
-          "write": false,
+          "write": true,
           "options": {
             "modbusVarType": {
               "currentValue": "HoldingRegister"
             },
             "modbusVarAddress": {
-              "currentValue": 1
+              "currentValue": 0
             },
             "modbusDisplayType": {
-              "currentValue": "UInt"
+              "currentValue": "Double"
             },
             "modbusBytesOrder": {
               "currentValue": "BE"
@@ -160,10 +160,10 @@
               "currentValue": "HoldingRegister"
             },
             "modbusVarAddress": {
-              "currentValue": 2
+              "currentValue": 4
             },
             "modbusDisplayType": {
-              "currentValue": "UInt"
+              "currentValue": "Long"
             },
             "modbusBytesOrder": {
               "currentValue": "BE"
@@ -209,7 +209,7 @@
             "modbusVarType": {
               "currentValue": "Coil"
             },
-            "mcodbusVarAddress": {
+            "modbusVarAddress": {
               "currentValue": 3
             }
           },

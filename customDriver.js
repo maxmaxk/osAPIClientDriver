@@ -18,9 +18,14 @@ const errTagNotWriteableTxt     = 'Tag not writeable';
 const errConfigTxt              = 'Config error';
 const errHostCloseConnectTxt    = 'Host close connection';
 const errHostUnreachableTxt     = 'Host unreachable';
+const errInvalidSetValueTxt     = 'Invalid set value';
 
 const modbusTypes               = ["Coil", "DescreateInput", "HoldingRegister", "InputRegister"];
-const modbusCmdCodes            = [1, 2, 3, 4];
+const modbusCmdCodes            = [0x01, 0x02, 0x03, 0x04];
+const modbusWriteSingleCoil     = 0x05;
+const modbusWriteSingleHold     = 0x06;
+const modbusWriteMultiCoil      = 0x0F;
+const modbusWriteMultiHold      = 0x10;
 
 const typesLength               = {};
 typesLength['Int']              = 1;
@@ -70,7 +75,6 @@ class CustomDriver{
       this.getTagsList('write', dataObj)
       .then(tags => this.modbusRequest('write', tags, dataObj.transID, multiWriteEnable))
       .then( _ => {
-      //  res.answer.values = values;
         res.error = "";
         resolve(res);
       })
@@ -108,8 +112,12 @@ class CustomDriver{
           reject(errTagNotFoundTxt);
           return;
         }
-        if(!tag.read){
+        if((cmd == 'read')  && !tag.read){
           reject(errTagNotReadableTxt);
+          return;
+        }
+        if((cmd == 'write')  && !tag.write){
+          reject(errTagNotWriteableTxt);
           return;
         }
         if ((cmd == 'write') &&
@@ -131,7 +139,6 @@ class CustomDriver{
                                       tag.options.modbusBytesOrder.currentValue : defaultModbusBytesOrder;
           tagItem.ip = this.nodeList.list[device.nodeUid].options.modbusHost.currentValue;
           tagItem.port = this.nodeList.list[device.nodeUid].options.modbusPort.currentValue;
-
           if(cmd == 'read'){
             tagItem.name = item;
           }
@@ -158,8 +165,8 @@ class CustomDriver{
     return new Promise((resolve,reject) => {
       let values = [];
       let requests = this.prepareRequests('read', tags);
-      let buffer = this.prepareReadBuffer(requests, tags);
-      this.sendBufferToSocket(buffer, tags, requests, transID)
+      let buffer = this.prepareBuffer('read', requests, tags);
+      this.sendBufferToSocket('read', buffer, tags, requests, transID)
       .then( values => resolve(values))
       .catch(err => {
         console.log(err);
@@ -170,13 +177,23 @@ class CustomDriver{
 
   modbusWriteRequest(tags, transID, multiWriteEnable){
     return new Promise((resolve, reject) => {
-      //TODO
-      let requests = this.prepareRequests('write', tags);
-      let buffer = this.prepareWriteBuffer(requests, tags, multiWriteEnable);
+      try{
+        let requests = this.prepareRequests('write', tags, multiWriteEnable);
+        console.log("requests = ", requests);
+        let buffer = this.prepareBuffer('write', requests, tags, multiWriteEnable);
+        this.sendBufferToSocket('write', buffer, tags, requests, transID)
+        .then( _ => resolve())
+        .catch(err => {
+          console.log(err);
+          reject(err);
+        });
+      }catch(err){
+        reject(err.message);
+      }
     })
   }
 
-  sendBufferToSocket(buffer, tags, requests, transID){
+  sendBufferToSocket(cmd, buffer, tags, requests, transID){
     let chain = Promise.resolve();
     let fullDeviceName = this.getFullDeviceAddress(tags);
     if (!this[fullDeviceName]) this[fullDeviceName] = {};
@@ -186,13 +203,13 @@ class CustomDriver{
       chain = chain.then( _ => this.createConnect(tags, fullDeviceName));
     }
     buffer.forEach((item) => {
-        chain = chain.then( _ => this.checkConnected(fullDeviceName, tags, item));
-        chain = chain.then( _ => this.checkSocketReady(fullDeviceName, tags, item));
-        chain = chain.then( _ => this.sendToSocket(item, this.connections[fullDeviceName]));
-        chain = chain.then( _ => this.waitAnswer(item, this.connections[fullDeviceName], tags));
-        chain = chain.then( result => this.parseResult(result, tags, requests, transID));
+      chain = chain.then( _ => this.checkConnected(fullDeviceName, tags, item));
+      chain = chain.then( _ => this.checkSocketReady(fullDeviceName, tags, item));
+      chain = chain.then( _ => this.sendToSocket(item, this.connections[fullDeviceName]));
+      chain = chain.then( _ => this.waitAnswer(item, this.connections[fullDeviceName], tags));
+      if(cmd == 'read') chain = chain.then( result => this.parseResult(result, tags, requests, transID));
     });
-    chain = chain.then( _ => this.finishParse(tags, transID));
+    chain = chain.then( _ => this.finishParse(cmd, tags, transID));
     return chain;
   }
 
@@ -266,6 +283,7 @@ class CustomDriver{
     }
   }
 
+  // response handler for incoming packets
   response(client, data){
     let responsePacket = new Packet;
     if(client.waitresponse && client.waitresponse.requestId     ==   responsePacket.getId(data)
@@ -303,14 +321,16 @@ class CustomDriver{
     });
   }
 
-  prepareReadBuffer(requests, tags){
+  prepareBuffer(cmd, requests, tags, multiWriteEnable = true){
     let buffers = [];
-    let modbusDeviceId = tags && tags[0] ? tags[0].modbusId : null;
+    let modbusDeviceId = this.getModbusDeviceId(tags);
     if(!modbusDeviceId) return null;
     for (let i = 0; i < modbusCmdCodes.length; i++){
       if(requests[i]){
         for (let item of requests[i]){
-          let buffArr = this.getBuffArr(item, modbusDeviceId, modbusCmdCodes[i]);
+          let buffArr = [];
+          if(cmd == 'read') buffArr = this.getReadBuffArr(item, modbusDeviceId, modbusCmdCodes[i]);
+          if(cmd == 'write') buffArr = this.getWriteBuffArr(item, modbusDeviceId, modbusTypes[i], multiWriteEnable);
           buffers.push(Buffer.from(buffArr));
         }
       }
@@ -318,23 +338,7 @@ class CustomDriver{
     return buffers;
   }
 
-  prepareWriteBuffer(requests, tags, multiWriteEnable){
-    // HERE
-    let buffers = [];
-    let modbusDeviceId = tags && tags[0] ? tags[0].modbusId : null;
-    if(!modbusDeviceId) return null;
-    for (let i = 0; i < modbusCmdCodes.length; i++){
-      if(requests[i]){
-        for (let item of requests[i]){
-          let buffArr = this.getBuffArr(item, modbusDeviceId, modbusCmdCodes[i]);
-          buffers.push(Buffer.from(buffArr));
-        }
-      }
-    }
-    return buffers;
-  }
-
-  getBuffArr(item, modbusDeviceId, modbusCode){
+  getReadBuffArr(item, modbusDeviceId, modbusCode){
     const modbusProtocolId = 0;
     const packetLength = 6;
     let buffArr = [];
@@ -350,8 +354,110 @@ class CustomDriver{
     return buffArr;
   }
 
+  getWriteBuffArr(item, modbusDeviceId, modbusType, multiWriteEnable){
+    const modbusProtocolId = 0;
+    const packetLength = this.getModbusPacketLength(item, modbusType, multiWriteEnable);
+    let buffArr = [];
+    let requestCounter = this.getRequestCounter();
+    item.requestCounter = requestCounter;
+    this.addWord(buffArr, requestCounter);
+    this.addWord(buffArr, modbusProtocolId);
+    this.addWord(buffArr, packetLength);
+    buffArr.push(modbusDeviceId);
+    buffArr.push(this.getModbusWriteCode(modbusType, multiWriteEnable));
+    this.addWord(buffArr, item.start);
+    if(multiWriteEnable){
+      this.addWord(buffArr, item.count);
+      buffArr.push(this.getModbusBytesCountLeft(item, modbusType));
+    }
+    this.pushSetValues(buffArr, item, modbusType, multiWriteEnable);
+    return buffArr;
+  }
+
+  getModbusPacketLength(item, modbusType, multiWriteEnable){
+    if(!multiWriteEnable) return 6;
+    if(modbusType == 'Coil'){
+      return 7 + this.getModbusBytesCountLeft(item, modbusType);
+    }
+    if(modbusType == 'HoldingRegister'){
+      return 7 + this.getModbusBytesCountLeft(item, modbusType);
+    }
+    throw new Error('Cannot calc packet length: unsupported write type');
+  }
+
+  getModbusBytesCountLeft(item, modbusType){
+    if(modbusType == 'Coil'){
+      return Math.ceil(item.count / 8);
+    }
+    if(modbusType == 'HoldingRegister'){
+      return 2 * item.count;
+    }
+    return null;
+  }
+
+  pushSetValues(buffArr, item, modbusType, multiWriteEnable){
+    const getLastElemValue = (item, i) => {
+      let res = {};
+      if(item.tags.length > i){
+        let valuesArr = item.tags[i];
+        if(valuesArr.length > 0){
+          let valuesElem = valuesArr[valuesArr.length - 1];
+          res.value1 = valuesElem.value1;
+          res.value2 = valuesElem.value2;
+        }
+      }
+      if(!res) throw new Error('Set value index error');
+      return res;
+    }
+    if(!multiWriteEnable){
+      let setValue = getLastElemValue(item, 0);
+      if(modbusType == 'Coil'){
+        if((setValue.value1 + setValue.value2) !== 0){
+          buffArr.push(0xFF);
+          buffArr.push(0x00);
+        }else{
+          buffArr.push(0x00);
+          buffArr.push(0x00);
+        }
+      }
+      if(modbusType == 'HoldingRegister'){
+        buffArr.push(setValue.value1);
+        buffArr.push(setValue.value2);
+      }
+    }else{ // multiWriteEnable = true
+      if(modbusType == 'Coil'){
+        for(let i = 0; i < this.getModbusBytesCountLeft(item, modbusType); i++){
+          let byteValue = 0;
+          for(let j = 0; j < 8; j++){
+            if(item.tags.length > i + j){
+              let setValue = getLastElemValue(item, i + j);
+              if((setValue.value1 + setValue.value2) !== 0){
+                byteValue += (1 << j);
+              }
+            }
+          }
+          buffArr.push(byteValue);
+        }
+      }
+      if(modbusType == 'HoldingRegister'){
+        for(let i = 0; i < item.count; i++){
+          let setValue = getLastElemValue(item, i);
+          buffArr.push(setValue.value1);
+          buffArr.push(setValue.value2);
+        }
+      }
+    }
+  }
+
+  getModbusWriteCode(modbusType, multiWriteEnable){
+    if((modbusType == 'Coil') && !multiWriteEnable) return modbusWriteSingleCoil;
+    if((modbusType == 'Coil') && multiWriteEnable) return modbusWriteMultiCoil;
+    if((modbusType == 'HoldingRegister') && !multiWriteEnable) return modbusWriteSingleHold;
+    if((modbusType == 'HoldingRegister') && multiWriteEnable) return modbusWriteMultiHold;
+    throw new Error('Cannot get modbus code: unsupported write type');
+  }
+
   addWord(arr, value){
-    value &= 0xFFFF;
     arr.push((value & 0xFF00) >> 8);
     arr.push(value & 0xFF);
   }
@@ -362,7 +468,7 @@ class CustomDriver{
   }
 
   getTypeLength(item){
-    if ((item.type == 'Coil') || (item.type == "DescreateInput")) return 1;
+    if ((item.modbusVarType == 'Coil') || (item.modbusVarType == "DescreateInput")) return 1;
     let typeName = item.modbusDisplayType;
     if(!typeName) return 1;
     let len = typesLength[typeName];
@@ -370,7 +476,7 @@ class CustomDriver{
     return 1;
   }
 
-  prepareRequests(cmd, tags){
+  prepareRequests(cmd, tags, multiWriteEnable = true){
     let requests = [];
     let registers = {};
     modbusTypes.forEach((item) => {
@@ -380,38 +486,101 @@ class CustomDriver{
       let len = this.getTypeLength(item);
       let valueWriteParts = [];
       if(cmd == 'write'){
-        valueWriteParts = this.getValueWriteParts(item, len);
+        if (!this.checkSetValue(item)) throw new Error(errInvalidSetValueTxt);
+        valueWriteParts = this.getValueWriteParts(item);
       }
       for(let i = 0; i < len; i++){
         if(cmd == 'read'){
           registers[item.modbusVarType].push({"tag": i.toString() + item.name, "address": item.modbusVarAddress + i});
         }else{
-          registers[item.modbusVarType].push({"tag": i.toString() + item.name, "address": item.modbusVarAddress, "value": valueWriteParts[i]});
+          registers[item.modbusVarType].push({"tag": i.toString() + item.name, "address": item.modbusVarAddress + i,
+                                              "value1": valueWriteParts[i].d0, "value2": valueWriteParts[i].d1});
         }
       }
     }
     modbusTypes.forEach((item) => {
-      requests.push(this.getRequestByType(registers, item));
+      requests.push(this.getRequestByType(cmd, registers, item, multiWriteEnable));
     });
     return requests;
   }
 
-  getValueWriteParts(item, len){
-    //HERE
-    console.log("item=", item);
+  getValueWriteParts(valueObj){
     let res = [];
-    let valueObj = {};
-    valueObj.modbusDisplayType = item.modbusDisplayType || defaultModbusDisplayType;
-    valueObj.modbusBytesOrder = item.modbusBytesOrder || defaultModbusBytesOrder;
-    this.encodeValue(valueObj, item.setValue); // need to implement
+    valueObj.modbusDisplayType = valueObj.modbusDisplayType || defaultModbusDisplayType;
+    valueObj.modbusBytesOrder = valueObj.modbusBytesOrder || defaultModbusBytesOrder;
+    let regsCount = this.getTypeLength(valueObj);
+    this.encodeValue(valueObj);
     this.swapBytes(valueObj);
-    for (let i = 0; i < len; i++) {
-      res.push(0);
+    for (let i = 0; i < regsCount; i++) {
+      res.push(valueObj[i]);
     }
     return res;
   }
 
-  getRequestByType(registers, type){
+  encodeValue(valueObj){
+    switch (valueObj.modbusDisplayType) {
+      case 'Int': case 'Long': case 'UInt': case 'ULong':
+        return this.uniEncodeIntValue(valueObj);
+      case 'Float': case 'Double':
+        return this.encodeFloatValue(valueObj);
+      default:
+        return this.uniEncodeIntValue(valueObj);
+    }
+  }
+
+  uniEncodeIntValue(valueObj){
+    let value = valueObj.setValue;
+    let regsCount = this.getTypeLength(valueObj);
+    let maxCapacity = this.getMaxCapacity(regsCount);
+    if(value < 0) value += maxCapacity;
+    for(let i = 0; i < regsCount; i++){
+      let regValue = value >> ((regsCount - i - 1) * 16);
+      valueObj[i] = {};
+      valueObj[i].d0 = (regValue >> 8) & 0x00FF;
+      valueObj[i].d1 = regValue & 0x00FF;
+    }
+  }
+
+  encodeFloatValue(valueObj){
+    let value = valueObj.setValue;
+    let regsCount = this.getTypeLength(valueObj);
+    let buffer = new ArrayBuffer(2 * regsCount + 1);
+    let view = new DataView(buffer);
+    if(regsCount == 2){
+      view.setFloat32(0, value);
+    }else if(regsCount == 4){
+      view.setFloat64(0, value);
+    }else{
+      throw new Error('Wrong float value size');
+    }
+    let int8Buf = new Uint8Array(buffer);
+    for(let i = 0; i < regsCount; i++){
+      valueObj[i] = {};
+      valueObj[i].d0 = int8Buf[2 * i];
+      valueObj[i].d1 = int8Buf[2 * i + 1];;
+    }
+  }
+
+  checkSetValue(valueObj){
+    let value = valueObj.setValue;
+    if (typeof(value) !== 'number') return false;
+    if ((valueObj.modbusDisplayType == 'Float') || (valueObj.modbusDisplayType == 'Double')) return true;
+    let regsCount = this.getTypeLength(valueObj);
+    let signed = this.isTypeSigned(valueObj.modbusDisplayType);
+    let maxCapacity = this.getMaxCapacity(regsCount);
+    if(signed){
+      return ((value >= -maxCapacity / 2) && (value <= maxCapacity / 2 - 1));
+    }else{
+      return ((value >= 0) && (value < maxCapacity));
+    }
+  }
+
+  getRequestByType(cmd, registers, type, multiWriteEnable){
+    const getTag = (cmd, item) => {
+      if(cmd == 'read') return item.tag;
+      if(cmd == 'write') return {'tagName': item.tag, 'value1': item.value1, 'value2': item.value2}
+      return null;
+    }
     const maxRegReadCount = 125;
     const maxCoilReadCount = 2000;
     let maxReadCount = ((type == "Coil") || (type == "DescreateInput")) ? maxCoilReadCount : maxRegReadCount;
@@ -424,21 +593,21 @@ class CustomDriver{
     for(let item of sortedRegs){
       if(!counter){
         startIndex = item.address;
-        tags.push(item.tag);
+        tags.push(getTag(cmd, item));
         counter++;
       }else{
         let prevIndex = startIndex + counter - 1;
-        if(prevIndex == item.address) tags.push(item.tag);
-        if(((item.address - prevIndex) == 1) && (counter < maxReadCount)){
+        if(prevIndex == item.address) tags.push(getTag(cmd, item));
+        if(((item.address - prevIndex) == 1) && (counter < maxReadCount) && multiWriteEnable){
           requestsTags.push(tags);
-          tags = [item.tag];
+          tags = [getTag(cmd, item)];
           counter++;
-        }else if(((item.address - prevIndex) > 1) || (counter == maxReadCount)){
+        }else if(((item.address - prevIndex) > 1) || (counter == maxReadCount) || !multiWriteEnable){
           requestsTags.push(tags);
           requests.push({"start": startIndex, "count": counter, "tags": requestsTags, "type": type});
           requestsTags = [];
           startIndex = item.address;
-          tags = [item.tag];
+          tags = [getTag(cmd, item)];
           counter = 1;
         }
       }
@@ -470,11 +639,11 @@ class CustomDriver{
     let tagsObj = this.getTagsObj(tags);
     let buffer = {};
     for(let i = 0; i < item.tags.length; i++){
-      let value = ((item.type == 'Coil') || (item.type == 'DescreateInput')) ? this.parseDiscreateValue(i, data) : null;
+      let isDescreate = ((item.type == 'Coil') || (item.type == 'DescreateInput'));
       for(let j = 0; j < item.tags[i].length; j++){
         let itemName = item.tags[i][j].slice(1);
-        if(value){
-          this[fullDeviceName][transID].values[itemName] = value;
+        if(isDescreate){
+          this[fullDeviceName][transID].values[itemName] = this.parseDiscreateValue(i, data);
         }else{
           if(!buffer[itemName]){
             buffer[itemName] = {};
@@ -482,6 +651,7 @@ class CustomDriver{
             if(mdt) buffer[itemName].modbusDisplayType = mdt;
             let mbo = tagsObj[itemName].modbusBytesOrder;
             if(mbo) buffer[itemName].modbusBytesOrder = mbo;
+            buffer[itemName].modbusVarType = tagsObj[itemName].modbusVarType;
           }
           let tagIndex = item.tags[i][j].slice(0,1);
           buffer[itemName][tagIndex] = {};
@@ -499,18 +669,24 @@ class CustomDriver{
 
   parseValue(valueObj){
     this.swapBytes(valueObj);
+    let signed = this.isTypeSigned(valueObj.modbusDisplayType);
     switch (valueObj.modbusDisplayType) {
       case 'Int': case 'Long':
-        return this.uniParseIntValue(valueObj, true);
+        return this.uniParseIntValue(valueObj, signed);
       case 'UInt': case 'ULong':
-        return this.uniParseIntValue(valueObj, false);
+        return this.uniParseIntValue(valueObj, signed);
       case 'Float':
         return this.parseFloatValue(valueObj, false);
       case 'Double':
         return this.parseFloatValue(valueObj, true);
       default:
-        return this.uniParseIntValue(valueObj, false);
+        return this.uniParseIntValue(valueObj, signed);
     }
+  }
+
+  isTypeSigned(mdt){
+    if ((mdt == 'UInt') || (mdt == 'ULong')) return false;
+    return true;
   }
 
   getBytesArr(valueObj){
@@ -559,10 +735,15 @@ class CustomDriver{
       value += coef * bytesArr[i];
     }
     if(!signed) return value;
-    let maxValue = BigInt(1);
-    maxValue <<= BigInt(16 * regsCount);
-    maxValue = Number(maxValue);
-    return (value >= maxValue/2)?value - maxValue : value;
+    let maxCapacity = this.getMaxCapacity(regsCount);
+    return (value >= maxCapacity / 2) ? value - maxCapacity : value;
+  }
+
+  getMaxCapacity(regsCount){
+    let maxCapacity = BigInt(1);
+    maxCapacity <<= BigInt(16 * regsCount);
+    maxCapacity = Number(maxCapacity);
+    return maxCapacity;
   }
 
   parseFloatValue(valueObj, double){
@@ -593,14 +774,16 @@ class CustomDriver{
       return null;
   }
 
-  finishParse(tags, transID){
+  finishParse(cmd, tags, transID){
     let fullDeviceName = this.getFullDeviceAddress(tags);
     let values = [];
-    for(let tag of tags){
-      if(this[fullDeviceName][transID].values){
-        values.push(this[fullDeviceName][transID].values[tag.name])
-      }else{
-        values.push(null);
+    if(cmd == 'read'){
+      for(let tag of tags){
+        if(this[fullDeviceName][transID].values){
+          values.push(this[fullDeviceName][transID].values[tag.name])
+        }else{
+          values.push(null);
+        }
       }
     }
     delete this[fullDeviceName][transID];
@@ -619,6 +802,11 @@ class CustomDriver{
 
   getPort(tags){
     if (tags && tags[0]) return tags[0].port;
+    return null;
+  }
+
+  getModbusDeviceId(tags){
+    if (tags && tags[0]) return tags[0].modbusId;
     return null;
   }
 
