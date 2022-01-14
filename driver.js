@@ -205,6 +205,7 @@ class ObjList {
 		}
 	}
 	setItem(dataObj){
+		//HERE
 		if(this.list[dataObj.uid]){
 			let warning = "";
 			if(dataObj.options){
@@ -251,7 +252,7 @@ class ObjList {
 		}
 		return maxId + 1;
 	}
-	addItem(dataObj, nodeList){
+	addItem(dataObj){
 		if(!dataObj.name){
 			return {error:errNameAbsentTxt};
 		}
@@ -361,6 +362,14 @@ class ObjList {
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID, tags:res};
 		return {answer:answer, error:""};
 	}
+	setTagsSubscribe(dataObj){
+		//HERE
+		for (let item in this.list){
+			this.list[item].subscribed = dataObj.tags.includes(item);
+		}
+		let answer = {cmd:dataObj.cmd, transID: dataObj.transID};
+		return {answer:answer, error:"", setConfig: true};
+	}
 }
 
 
@@ -375,7 +384,7 @@ let nodeList = new ObjList(config.nodes, 'nodes');
 let deviceList = new ObjList(config.devices, 'devices', config.nodes);
 if(!config) return;
 const {orangeScadaPort, orangeScadaHost, ssl, uid, password} = config.driver;
-let customDriver = new CustomDriver(nodeList, deviceList, config);
+let customDriver = new CustomDriver(nodeList, deviceList, config, subscribeHandler);
 
 
 //*****************************************************************
@@ -466,9 +475,9 @@ process.on('SIGINT', () => {
 function handShake(){
 	let req;
 	if(password){
-		req = { cmd:'connect', uid:uid, password:password, transID:0 };
+		req = {cmd: 'connect', uid: uid, password: password, transID: 0};
 	}else{
-		req = { cmd:'connect', uid:uid, transID:0 };
+		req = {cmd: 'connect', uid: uid, transID: 0};
 	}
 	sendToSocket(req);
 };
@@ -521,13 +530,10 @@ function getHandler(cmd){
 		case 'addTag' 			    		: return addTag;
 		case 'deleteTag' 			    	: return deleteTag;
 		case 'getTagsValues' 	  			: return getTagsValues;
-		case 'getTagsValuesSubscribe'		: return getTagsValuesSubscribe;
 		case 'setTagsValues' 	  			: return setTagsValues;
-	//	case 'getAlarms' 	      			: return getAlarms;
-	//	case 'setSubscriptionAlarm' 		: return setSubscriptionAlarm;
+		case 'setTagsSubscribe'				: return setTagsSubscribe;
+		case 'asyncTagsValues'				: return asyncTagsValues;
 		case 'getEvent' 					: return getEvent;
-	//	case 'getEvents' 					: return getEvents;
-	//	case 'getArchiveTag' 				: return getArchiveTag;
 		default: return null;
 	}
 }
@@ -561,7 +567,7 @@ function socketCommunicate(res, dataObj) {
 }
 
 function commonHandler(dataObj, method){
-	logger(dataObj.cmd+' '+commandRequestTxt);
+	logger(dataObj.cmd + ' ' + commandRequestTxt);
 	let res = {};
 	let error = "";
 	if(!method){
@@ -662,7 +668,6 @@ function deleteDevice(dataObj){
 
 function getTags(dataObj){
 	commonHandler(dataObj, deviceList.getTags.bind(deviceList));
-	//commonTagHandler(dataObj,'getTags');
 }
 
 
@@ -715,13 +720,27 @@ function getTagsValues(dataObj){
 	.then(res => socketCommunicate(res), res => socketCommunicate(res, dataObj));
 }
 
-// getTagsValuesSubscribe command handler
+// setTagsSubscribe command handler
 
-function getTagsValuesSubscribe(dataObj){
+function setTagsSubscribe(dataObj){
+	commonTagHandler(dataObj,'setTagsSubscribe');
+	customDriver.updateSubscribe();
+}
+
+// handler invoke from customDriver on data change
+function subscribeHandler(dataObj){
+	console.log("subscribeHandler, data.values= ", dataObj);
+	dataObj.cmd = 'asyncTagsValues';
+	dataObj.transID = 0; // ?????
+	sendToSocket(dataObj);
+}
+
+// asyncTagsValues confirm
+function asyncTagsValues(dataObj){
+	logger(dataObj.cmd + ' ' + commandRequestTxt);
 }
 
 // setTagsValues command handler
-
 function setTagsValues(dataObj){
 	customDriver.setTagsValues(dataObj)
 	.then(res => socketCommunicate(res), res => socketCommunicate(res, dataObj));

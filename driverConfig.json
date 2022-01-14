@@ -2,7 +2,7 @@
   "driver": {
     "orangeScadaPort": 9006,
     "orangeScadaHost": "localhost",
-    "ssl": true,
+    "ssl": false,
     "uid": "1234"
   },
   "optionsScheme": {
@@ -142,12 +142,13 @@
               "currentValue": 0
             },
             "modbusDisplayType": {
-              "currentValue": "Double"
+              "currentValue": "Float"
             },
             "modbusBytesOrder": {
               "currentValue": "BE"
             }
-          }
+          },
+          "subscribed": true
         },
         "2": {
           "name": "InputReg2",
@@ -168,7 +169,8 @@
             "modbusBytesOrder": {
               "currentValue": "BE"
             }
-          }
+          },
+          "subscribed": false
         },
         "3": {
           "name": "HoldingRegister1",
@@ -186,7 +188,8 @@
           "type": "int",
           "address": 3,
           "read": true,
-          "write": true
+          "write": true,
+          "subscribed": false
         },
         "4": {
           "name": "newTag",
@@ -201,7 +204,8 @@
           "type": "int",
           "address": 4,
           "read": true,
-          "write": true
+          "write": true,
+          "subscribed": false
         },
         "5": {
           "name": "newTag",
@@ -216,7 +220,8 @@
           "type": "int",
           "address": 5,
           "read": true,
-          "write": true
+          "write": true,
+          "subscribed": false
         },
         "6": {
           "name": "newTag",
@@ -231,7 +236,8 @@
           "type": "int",
           "address": 3,
           "read": true,
-          "write": true
+          "write": true,
+          "subscribed": false
         },
         "7": {
           "name": "newTag",
@@ -246,7 +252,8 @@
           "type": "int",
           "address": 3,
           "read": true,
-          "write": true
+          "write": true,
+          "subscribed": false
         }
       }
     },

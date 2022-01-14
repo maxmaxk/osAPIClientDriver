@@ -60,7 +60,13 @@ const tlsServer = tls.createServer(options, (socket) => {
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":["4","5"]}\n');
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID+', "deviceUid":"2", "tags":["1"]}');
     }
-    if(transID == 22) socket.write('{"cmd":"setTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":[{"4": 0}, {"5": 0}]}');
+    if(transID == 22) socket.write('{"cmd":"setTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":[{"4": 1}, {"5": 0}]}\n');
+    if(transID == 23) socket.write('{"cmd":"setTagsSubscribe", "transID": '+transID++ +', "deviceUid":"1", "tags":["0"]}');
+    dataObj = JSON.parse(data.toString());
+    if(dataObj.cmd == 'asyncTagsValues'){
+      socket.write('{"cmd":"asyncTagsValues", "transID":0}');
+    }
+
   });
 });
 

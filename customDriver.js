@@ -21,6 +21,16 @@ const errHostUnreachableTxt     = 'Host unreachable';
 const errInvalidSetValueTxt     = 'Invalid set value';
 
 const modbusTypes               = ["Coil", "DescreateInput", "HoldingRegister", "InputRegister"];
+const modbusErrorCodes          = {0x01: 'Illegal function',
+                                   0x02: 'Illegal data address',
+                                   0x03: 'Illegal data value',
+                                   0x04: 'Server device failure',
+                                   0x05: 'Acknowledge',
+                                   0x06: 'Server device busy',
+                                   0x08: 'Memory parity error',
+                                   0x0A: 'Gateway path unavailable',
+                                   0x0B: 'Gateway target device failed to respond'
+                                  }
 const modbusCmdCodes            = [0x01, 0x02, 0x03, 0x04];
 const modbusWriteSingleCoil     = 0x05;
 const modbusWriteSingleHold     = 0x06;
@@ -36,17 +46,22 @@ typesLength['Float']            = 2;
 typesLength['Double']           = 4;
 
 const defaultTimeout            = 10000;
+const subscribeTimerCycle       = 1000;
 const defaultModbusDisplayType  = 'UInt';
 const defaultModbusBytesOrder   = 'BE';
 
 class CustomDriver{
 
-  constructor(nodeList, deviceList, config){
+  constructor(nodeList, deviceList, config, subscribeHandler){
     this.nodeList = nodeList;
     this.deviceList = deviceList;
     this.config = config;
     this.connections = {};
+    this.clients = {}; // HERE !!!!
     this.requestCounter = 0;
+    this.subscribeHandler = subscribeHandler;
+    this.updateSubscribe();
+    setInterval(this.subscribeTimer.bind(this), subscribeTimerCycle);
   }
 
   getTagsValues(dataObj){
@@ -54,7 +69,7 @@ class CustomDriver{
       let res = {};
       res.answer = {cmd:dataObj.cmd, transID: dataObj.transID};
       this.getTagsList('read', dataObj)
-      .then(tags => this.modbusRequest('read', tags, dataObj.transID))
+      .then(tags => this.modbusReadRequest(tags, dataObj.transID))
       .then(values => {
         res.answer.values = values;
         res.error = "";
@@ -73,7 +88,7 @@ class CustomDriver{
       res.answer = {cmd:dataObj.cmd, transID: dataObj.transID};
       let multiWriteEnable = this.isMultiWriteEnable(dataObj);
       this.getTagsList('write', dataObj)
-      .then(tags => this.modbusRequest('write', tags, dataObj.transID, multiWriteEnable))
+      .then(tags => this.modbusWriteRequest(tags, dataObj.transID, multiWriteEnable))
       .then( _ => {
         res.error = "";
         resolve(res);
@@ -83,6 +98,72 @@ class CustomDriver{
         reject(res);
       })
     })
+  }
+
+  updateSubscribe(){
+    this.subscribed = {};
+    for(let item in this.config.devices){
+      let tags = this.config.devices[item].tags;
+      if(tags){
+        for (let tag in tags){
+          if(tags[tag].subscribed) this.subscribed[item + ':' + tag] = {tagname: tag, device: item, value: undefined, isRequested: false};
+        }
+      }
+    }
+  }
+
+  subscribeTimer(){
+    if(!this.subscribed) return;
+    //HERE
+    let requestSubscribedObj = {};
+    for(let index in this.subscribed){
+      let item = this.subscribed[index];
+      if(!item.isRequested){
+        if(requestSubscribedObj[item.device] === undefined){
+          requestSubscribedObj[item.device] = [];
+        }
+        requestSubscribedObj[item.device].push(item);
+        item.isRequested = true;
+      }
+    }
+    this.requestSubscribed(requestSubscribedObj);
+  }
+
+  requestSubscribed(requestSubscribedObj){
+    //HERE
+    let dataObj = {cmd: 'getTagsValues', transID: 0};
+    for(let item in requestSubscribedObj){
+      let tags = [];
+      dataObj.deviceUid = item;
+      for(let tag in requestSubscribedObj[item]){
+        tags.push(requestSubscribedObj[item][tag].tagname);
+      }
+      if(tags){
+        dataObj.tags = tags;
+        this.getTagsValues(dataObj)
+        .then(res => this.setSubscribedValues(dataObj, res), res => this.setSubscribedValues(dataObj, res)); 
+      }
+    }
+  }
+
+  setSubscribedValues(dataObj, res){
+    let resIndex = 0;
+    let sendSubscribedObj = {};
+    sendSubscribedObj.deviceUid = dataObj.deviceUid;
+    sendSubscribedObj.values = [];
+    for(let tag of dataObj.tags){
+      let index = dataObj.deviceUid + ':' + tag;
+      if(this.subscribed[index]){
+        this.subscribed[index].isRequested = false;
+        let newValue = !res.error && res.answer && res.answer.values && (res.answer.values[resIndex] !== undefined) ? res.answer.values[resIndex] : null;
+          if(this.subscribed[index].value !== newValue){
+            this.subscribed[index].value = newValue;
+            sendSubscribedObj.values.push({tag: tag, value: this.subscribed[index].value});
+        }
+      }
+      resIndex++;
+    }
+    if(sendSubscribedObj.values.length) this.subscribeHandler(sendSubscribedObj);
   }
 
   isMultiWriteEnable(dataObj){
@@ -156,14 +237,8 @@ class CustomDriver{
     });
   }
 
-  modbusRequest(cmd, tags, transID, multiWriteEnable = false){
-    if(cmd == 'read') return this.modbusReadRequest(tags, transID);
-    if(cmd == 'write') return this.modbusWriteRequest(tags, transID, multiWriteEnable);
-  }
-
   modbusReadRequest(tags, transID){
     return new Promise((resolve,reject) => {
-      let values = [];
       let requests = this.prepareRequests('read', tags);
       let buffer = this.prepareBuffer('read', requests, tags);
       this.sendBufferToSocket('read', buffer, tags, requests, transID)
@@ -171,6 +246,10 @@ class CustomDriver{
       .catch(err => {
         console.log(err);
         reject(err);
+      })
+      .finally( _ => {
+        let fullDeviceName = this.getFullDeviceAddress(tags);
+        delete this[fullDeviceName][transID];
       });
     })
   }
@@ -179,13 +258,16 @@ class CustomDriver{
     return new Promise((resolve, reject) => {
       try{
         let requests = this.prepareRequests('write', tags, multiWriteEnable);
-        console.log("requests = ", requests);
         let buffer = this.prepareBuffer('write', requests, tags, multiWriteEnable);
         this.sendBufferToSocket('write', buffer, tags, requests, transID)
         .then( _ => resolve())
         .catch(err => {
           console.log(err);
           reject(err);
+        })
+        .finally( _ => {
+          let fullDeviceName = this.getFullDeviceAddress(tags);
+          delete this[fullDeviceName][transID];
         });
       }catch(err){
         reject(err.message);
@@ -207,7 +289,7 @@ class CustomDriver{
       chain = chain.then( _ => this.checkSocketReady(fullDeviceName, tags, item));
       chain = chain.then( _ => this.sendToSocket(item, this.connections[fullDeviceName]));
       chain = chain.then( _ => this.waitAnswer(item, this.connections[fullDeviceName], tags));
-      if(cmd == 'read') chain = chain.then( result => this.parseResult(result, tags, requests, transID));
+      chain = chain.then( result => this.parseResult(cmd, result, tags, requests, transID));
     });
     chain = chain.then( _ => this.finishParse(cmd, tags, transID));
     return chain;
@@ -221,7 +303,7 @@ class CustomDriver{
   checkConnected(fullDeviceName, tags, item){
     return new Promise((resolve) => {
       let client = this.connections[fullDeviceName];
-      if(client.fullDeviceAddress){
+      if(client.connected){
         resolve();
         return;
       }else{
@@ -251,8 +333,9 @@ class CustomDriver{
     return new Promise((resolve, reject) => {
       let client = new net.Socket();
       this.connections[fullDeviceName] = client;
+      client.fullDeviceAddress = this.getFullDeviceAddress(tags);
       client.connect(this.getPort(tags), this.getHost(tags), _ => {
-        client.fullDeviceAddress = this.getFullDeviceAddress(tags);
+        client.connected = true;
         resolve(client);
         if(client.waitConnectResolves){
           for(let resolve of client.waitConnectResolves){
@@ -266,9 +349,12 @@ class CustomDriver{
       });
       client.on("close", _ => {
         delete this.connections[client.fullDeviceAddress];
+        client.connected = false;
         reject(errHostCloseConnectTxt);
       });
       client.on("error", data => {
+        delete this.connections[client.fullDeviceAddress];
+        client.connected = false;
         reject(errHostUnreachableTxt);
       });
     });
@@ -289,7 +375,13 @@ class CustomDriver{
     if(client.waitresponse && client.waitresponse.requestId     ==   responsePacket.getId(data)
                            && client.waitresponse.modbusAddress ==   responsePacket.getModbusAddress(data)
                            && client.waitresponse.modbusFunc    ==   responsePacket.getModbusFunc(data)){
-      client.waitresponse.resolve(data);
+      if (responsePacket.getModbusErrorStatus(data)){
+        let errCode = responsePacket.getModbusErrorCode(data); 
+        let errTxt = (errCode && modbusErrorCodes[errCode]) ? modbusErrorCodes[errCode] : 'Unknowng Modbus Error';
+        client.waitresponse.reject(errTxt);
+      }else{
+        client.waitresponse.resolve(data);
+      }
       if(client.nextRequestResolves){
         let resolve = client.nextRequestResolves.shift();
         if(resolve) resolve();
@@ -298,24 +390,26 @@ class CustomDriver{
     }
   }
 
-  parseResult(data, tags, requests, transID){
-    let responsePacket = new Packet;
-    let valuesData = responsePacket.getValues(data);
-    let packetId = responsePacket.getId(data);
-    for (let request of requests){
-      for(let item of request){
-        if(item.requestCounter == packetId){
-          this.valuesAssign(item, tags, valuesData, transID);
-          break;
+  parseResult(cmd, data, tags, requests, transID){
+    if(cmd == 'read'){
+      let responsePacket = new Packet;
+      let valuesData = responsePacket.getValues(data);
+      let packetId = responsePacket.getId(data);
+      for (let request of requests){
+        for(let item of request){
+          if(item.requestCounter == packetId){
+            this.valuesAssign(item, tags, valuesData, transID);
+            break;
+          }
         }
       }
     }
   }
 
   waitAnswer(request, client, tags){
-    return new Promise( resolve => {
+    return new Promise((resolve, reject) => {
       let requestPacket = new Packet;
-      client.waitresponse = { resolve: resolve, requestId: requestPacket.getId(request), modbusAddress: requestPacket.getModbusAddress(request), modbusFunc: requestPacket.getModbusFunc(request) };
+      client.waitresponse = {resolve: resolve, reject: reject, requestId: requestPacket.getId(request), modbusAddress: requestPacket.getModbusAddress(request), modbusFunc: requestPacket.getModbusFunc(request) };
       let timeout = this.getTimeout(tags) || defaultTimeout;
       setTimeout( _ => resolve(null), timeout);
     });
@@ -786,7 +880,6 @@ class CustomDriver{
         }
       }
     }
-    delete this[fullDeviceName][transID];
     return values;
   }
 
@@ -825,11 +918,12 @@ class CustomDriver{
 class Packet {
 
   constructor(){
-    this.packetIdIndex = 0;
-    this.packetModbusAddressIndex = 6;
-    this.packetModbusFuncIndex = 7;
-    this.packetModbusLenIndex = 8;
-    this.packetValuesIndex = 9;
+    this.packetIdIndex              = 0;
+    this.packetModbusAddressIndex   = 6;
+    this.packetModbusFuncIndex      = 7;
+    this.packetModbusErrorCodeIndex = 8;
+    this.packetModbusLenIndex       = 8;
+    this.packetValuesIndex          = 9;
   }
 
   getWord(request, index){
@@ -851,7 +945,17 @@ class Packet {
   }
 
   getModbusFunc(buffer){
-    return this.getByte(buffer, this.packetModbusFuncIndex);
+    let modbusCode = this.getByte(buffer, this.packetModbusFuncIndex);
+    return modbusCode & 0x7F;
+  }
+
+  getModbusErrorStatus(buffer){
+    let modbusCode = this.getByte(buffer, this.packetModbusFuncIndex);
+    return (modbusCode & 0x80) > 0;
+  }
+
+  getModbusErrorCode(buffer){
+    return this.getByte(buffer, this.packetModbusErrorCodeIndex);
   }
 
   getValues(buffer){
