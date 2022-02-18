@@ -2,7 +2,7 @@
   "driver": {
     "orangeScadaPort": 9006,
     "orangeScadaHost": "localhost",
-    "ssl": false,
+    "ssl": true,
     "uid": "1234"
   },
   "optionsScheme": {
@@ -40,7 +40,7 @@
         "uid": "timeout"
       },
       "multiWriteEnable": {
-        "type": "boolean",
+        "type": "bool",
         "name": "Modbus multi-write mode enable",
         "currentValue": true,
         "uid": "multiWriteEnable"
@@ -76,7 +76,7 @@
         }
       },
       "modbusBytesOrder": {
-        "types": "select",
+        "type": "select",
         "name": "Modbus bytes order",
         "selectValues": {
           "BE": "Big Endian",
@@ -129,7 +129,7 @@
       },
       "tags": {
         "0": {
-          "name": "HoldReg",
+          "name": "HoldReg222",
           "address": 1,
           "type": "int",
           "read": true,
@@ -192,7 +192,7 @@
           "subscribed": false
         },
         "4": {
-          "name": "newTag",
+          "name": "1",
           "options": {
             "modbusVarType": {
               "currentValue": "Coil"
@@ -205,10 +205,10 @@
           "address": 4,
           "read": true,
           "write": true,
-          "subscribed": false
+          "subscribed": true
         },
         "5": {
-          "name": "newTag",
+          "name": "1",
           "options": {
             "modbusVarType": {
               "currentValue": "Coil"
@@ -224,7 +224,7 @@
           "subscribed": false
         },
         "6": {
-          "name": "newTag",
+          "name": "1",
           "options": {
             "modbusVarType": {
               "currentValue": "Coil"
@@ -240,13 +240,13 @@
           "subscribed": false
         },
         "7": {
-          "name": "newTag",
+          "name": "1",
           "options": {
             "modbusVarType": {
-              "currentValue": "Coil"
+              "currentValue": "HoldingRegister"
             },
             "modbusVarAddress": {
-              "currentValue": 308
+              "currentValue": 10
             }
           },
           "type": "int",

@@ -3,8 +3,8 @@
 //*****************************************************************
 // This module implements features of your driver, such as
 // read|write tags, getting state of activity.
-// In this example, we implement Modbus driver,
-// you can change all methods for your driver needs
+// In this example, we implement Modbus TCP driver,
+// you can change all methods for your own driver needs
 //*****************************************************************
 
 // Error text constants
@@ -57,7 +57,7 @@ class CustomDriver{
     this.deviceList = deviceList;
     this.config = config;
     this.connections = {};
-    this.clients = {}; // HERE !!!!
+    this.clients = {};
     this.requestCounter = 0;
     this.subscribeHandler = subscribeHandler;
     this.updateSubscribe();
@@ -114,7 +114,6 @@ class CustomDriver{
 
   subscribeTimer(){
     if(!this.subscribed) return;
-    //HERE
     let requestSubscribedObj = {};
     for(let index in this.subscribed){
       let item = this.subscribed[index];
@@ -130,7 +129,6 @@ class CustomDriver{
   }
 
   requestSubscribed(requestSubscribedObj){
-    //HERE
     let dataObj = {cmd: 'getTagsValues', transID: 0};
     for(let item in requestSubscribedObj){
       let tags = [];
@@ -158,7 +156,7 @@ class CustomDriver{
         let newValue = !res.error && res.answer && res.answer.values && (res.answer.values[resIndex] !== undefined) ? res.answer.values[resIndex] : null;
           if(this.subscribed[index].value !== newValue){
             this.subscribed[index].value = newValue;
-            sendSubscribedObj.values.push({tag: tag, value: this.subscribed[index].value});
+            sendSubscribedObj.values.push({tag: this.subscribed[index].value});
         }
       }
       resIndex++;
@@ -193,10 +191,10 @@ class CustomDriver{
           reject(errTagNotFoundTxt);
           return;
         }
-        if((cmd == 'read')  && !tag.read){
+        /*if((cmd == 'read')  && !tag.read){
           reject(errTagNotReadableTxt);
           return;
-        }
+        }*/
         if((cmd == 'write')  && !tag.write){
           reject(errTagNotWriteableTxt);
           return;
@@ -222,6 +220,7 @@ class CustomDriver{
           tagItem.port = this.nodeList.list[device.nodeUid].options.modbusPort.currentValue;
           if(cmd == 'read'){
             tagItem.name = item;
+            tagItem.read = tag.read;
           }
           if(cmd == 'write'){
             tagItem.name = tagName;
@@ -249,7 +248,7 @@ class CustomDriver{
       })
       .finally( _ => {
         let fullDeviceName = this.getFullDeviceAddress(tags);
-        delete this[fullDeviceName][transID];
+        delete this.clients[fullDeviceName][transID];
       });
     })
   }
@@ -267,7 +266,7 @@ class CustomDriver{
         })
         .finally( _ => {
           let fullDeviceName = this.getFullDeviceAddress(tags);
-          delete this[fullDeviceName][transID];
+          delete this.clients[fullDeviceName][transID];
         });
       }catch(err){
         reject(err.message);
@@ -278,9 +277,9 @@ class CustomDriver{
   sendBufferToSocket(cmd, buffer, tags, requests, transID){
     let chain = Promise.resolve();
     let fullDeviceName = this.getFullDeviceAddress(tags);
-    if (!this[fullDeviceName]) this[fullDeviceName] = {};
-    this[fullDeviceName][transID] = {};
-    this[fullDeviceName][transID].values = {};
+    if (!this.clients[fullDeviceName]) this.clients[fullDeviceName] = {};
+    this.clients[fullDeviceName][transID] = {};
+    this.clients[fullDeviceName][transID].values = {};
     if (!this.connections[fullDeviceName]){
       chain = chain.then( _ => this.createConnect(tags, fullDeviceName));
     }
@@ -350,12 +349,12 @@ class CustomDriver{
       client.on("close", _ => {
         delete this.connections[client.fullDeviceAddress];
         client.connected = false;
-        reject(errHostCloseConnectTxt);
+        reject(`${errHostCloseConnectTxt} ${fullDeviceName}`);
       });
       client.on("error", data => {
         delete this.connections[client.fullDeviceAddress];
         client.connected = false;
-        reject(errHostUnreachableTxt);
+        reject(`${errHostUnreachableTxt}  ${fullDeviceName}`);
       });
     });
   }
@@ -371,12 +370,12 @@ class CustomDriver{
 
   // response handler for incoming packets
   response(client, data){
-    let responsePacket = new Packet;
-    if(client.waitresponse && client.waitresponse.requestId     ==   responsePacket.getId(data)
-                           && client.waitresponse.modbusAddress ==   responsePacket.getModbusAddress(data)
-                           && client.waitresponse.modbusFunc    ==   responsePacket.getModbusFunc(data)){
-      if (responsePacket.getModbusErrorStatus(data)){
-        let errCode = responsePacket.getModbusErrorCode(data); 
+    let responsePacket = new Packet(data);
+    if(client.waitresponse && client.waitresponse.requestId     ==   responsePacket.getId()
+                           && client.waitresponse.modbusAddress ==   responsePacket.getModbusAddress()
+                           && client.waitresponse.modbusFunc    ==   responsePacket.getModbusFunc()){
+      if (responsePacket.getModbusErrorStatus()){
+        let errCode = responsePacket.getModbusErrorCode(); 
         let errTxt = (errCode && modbusErrorCodes[errCode]) ? modbusErrorCodes[errCode] : 'Unknowng Modbus Error';
         client.waitresponse.reject(errTxt);
       }else{
@@ -392,9 +391,9 @@ class CustomDriver{
 
   parseResult(cmd, data, tags, requests, transID){
     if(cmd == 'read'){
-      let responsePacket = new Packet;
-      let valuesData = responsePacket.getValues(data);
-      let packetId = responsePacket.getId(data);
+      let responsePacket = new Packet(data);
+      let valuesData = responsePacket.getValues();
+      let packetId = responsePacket.getId();
       for (let request of requests){
         for(let item of request){
           if(item.requestCounter == packetId){
@@ -408,8 +407,8 @@ class CustomDriver{
 
   waitAnswer(request, client, tags){
     return new Promise((resolve, reject) => {
-      let requestPacket = new Packet;
-      client.waitresponse = {resolve: resolve, reject: reject, requestId: requestPacket.getId(request), modbusAddress: requestPacket.getModbusAddress(request), modbusFunc: requestPacket.getModbusFunc(request) };
+      let requestPacket = new Packet(request);
+      client.waitresponse = {resolve: resolve, reject: reject, requestId: requestPacket.getId(), modbusAddress: requestPacket.getModbusAddress(), modbusFunc: requestPacket.getModbusFunc()};
       let timeout = this.getTimeout(tags) || defaultTimeout;
       setTimeout( _ => resolve(null), timeout);
     });
@@ -737,7 +736,7 @@ class CustomDriver{
       for(let j = 0; j < item.tags[i].length; j++){
         let itemName = item.tags[i][j].slice(1);
         if(isDescreate){
-          this[fullDeviceName][transID].values[itemName] = this.parseDiscreateValue(i, data);
+          this.clients[fullDeviceName][transID].values[itemName] = this.parseDiscreateValue(i, data);
         }else{
           if(!buffer[itemName]){
             buffer[itemName] = {};
@@ -757,7 +756,11 @@ class CustomDriver{
       }
     }
     for(let itemName in buffer){
-      this[fullDeviceName][transID].values[itemName] = this.parseValue(buffer[itemName]);
+      if(tagsObj[itemName].read){
+        this.clients[fullDeviceName][transID].values[itemName] = this.parseValue(buffer[itemName]);
+      }else{
+        this.clients[fullDeviceName][transID].values[itemName] = null;
+      }
     };
   }
 
@@ -873,8 +876,8 @@ class CustomDriver{
     let values = [];
     if(cmd == 'read'){
       for(let tag of tags){
-        if(this[fullDeviceName][transID].values){
-          values.push(this[fullDeviceName][transID].values[tag.name])
+        if(this.clients[fullDeviceName][transID].values){
+          values.push(this.clients[fullDeviceName][transID].values[tag.name])
         }else{
           values.push(null);
         }
@@ -917,50 +920,51 @@ class CustomDriver{
 
 class Packet {
 
-  constructor(){
+  constructor(buffer){
     this.packetIdIndex              = 0;
     this.packetModbusAddressIndex   = 6;
     this.packetModbusFuncIndex      = 7;
     this.packetModbusErrorCodeIndex = 8;
     this.packetModbusLenIndex       = 8;
     this.packetValuesIndex          = 9;
+    this.buffer = buffer;
   }
 
-  getWord(request, index){
-    if(request && request.length >= index + 2) return 0x100 * request[index] + request[index + 1];
+  getWord(index){
+    if(this.buffer && this.buffer.length >= index + 2) return 0x100 * this.buffer[index] + this.buffer[index + 1];
     return null;
   }
 
-  getByte(request, index){
-    if(request && request.length >= index) return request[index];
+  getByte(index){
+    if(this.buffer && this.buffer.length >= index) return this.buffer[index];
     return null;
   }
 
-  getId(buffer){
-    return this.getWord(buffer, this.packetIdIndex);
+  getId(){
+    return this.getWord(this.packetIdIndex);
   }
 
-  getModbusAddress(buffer){
-    return this.getByte(buffer, this.packetModbusAddressIndex);
+  getModbusAddress(){
+    return this.getByte(this.packetModbusAddressIndex);
   }
 
-  getModbusFunc(buffer){
-    let modbusCode = this.getByte(buffer, this.packetModbusFuncIndex);
+  getModbusFunc(){
+    let modbusCode = this.getByte(this.packetModbusFuncIndex);
     return modbusCode & 0x7F;
   }
 
-  getModbusErrorStatus(buffer){
-    let modbusCode = this.getByte(buffer, this.packetModbusFuncIndex);
+  getModbusErrorStatus(){
+    let modbusCode = this.getByte(this.packetModbusFuncIndex);
     return (modbusCode & 0x80) > 0;
   }
 
-  getModbusErrorCode(buffer){
-    return this.getByte(buffer, this.packetModbusErrorCodeIndex);
+  getModbusErrorCode(){
+    return this.getByte(this.packetModbusErrorCodeIndex);
   }
 
-  getValues(buffer){
-    let len = this.getByte(buffer, this.packetModbusLenIndex);
-    if(len) return buffer.slice(this.packetValuesIndex, this.packetValuesIndex + len);
+  getValues(){
+    let len = this.getByte(this.packetModbusLenIndex);
+    if(len) return this.buffer.slice(this.packetValuesIndex, this.packetValuesIndex + len);
     return null;
   }
 }

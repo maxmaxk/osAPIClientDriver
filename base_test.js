@@ -48,10 +48,10 @@ const tlsServer = tls.createServer(options, (socket) => {
     if(transID == 14) socket.write('{"cmd":"addDevice", "transID": '+transID+', "name":"Modbus device 3", "options":[{"modbusId":3}]}');
     if(transID == 15) socket.write('{"cmd":"deleteDevice", "transID": '+transID+', "uid":["4"]}');
     if(transID == 16) socket.write('{"cmd":"getNode", "transID": '+transID+'}');
-    if(transID == 17) socket.write('{"cmd":"getTags", "deviceUid":"1", "isOptions":true, "transID": '+transID+'}');
+    if(transID == 17) socket.write('{"cmd":"getTags", "deviceUid":"3", "isOptions":true, "transID": '+transID+'}');
     if(transID == 18) socket.write('{"cmd":"getTag", "deviceUid":"1", "uid":"0", "transID": '+transID+'}');
-    if(transID == 19) socket.write('{"cmd":"setTag", "deviceUid":"1", "uid":"0", "name":"HoldReg", "transID": '+transID+', "options":[{"modbusVarType":"HoldingRegister"}]}');
-    if(transID == 20) socket.write('{"cmd":"getTag", "transID": '+transID+'}');
+    if(transID == 19) socket.write('{"cmd":"setTag", "deviceUid":"1", "uid":"0", "name":"HoldReg222", "transID": '+transID+', "options":[{"modbusVarType":"HoldingRegister"}]}');
+    if(transID == 20) socket.write('{"cmd":"getTag", "deviceUid":"3", "transID": '+transID+'}');
     //if(transID == 21) socket.write('{"cmd":"addTag", "deviceUid":"1", "address":3, "type":"int", "read": false, "write": true,"transID": '+transID+', "name":"newTag", "options":[{"modbusVarType":"Coil"},{"modbusVarAddress":10}]}');
   //  if(transID == 22) socket.write('{"cmd":"deleteTag", "deviceUid":"1", "uid":["3","4","5","6","7","8","9","10","11","12","13","14"], "transID": '+transID+'}');
     if(transID == 21){
@@ -61,7 +61,7 @@ const tlsServer = tls.createServer(options, (socket) => {
     //  socket.write('{"cmd":"getTagsValues", "transID": '+transID+', "deviceUid":"2", "tags":["1"]}');
     }
     if(transID == 22) socket.write('{"cmd":"setTagsValues", "transID": '+transID++ +', "deviceUid":"1", "tags":[{"4": 1}, {"5": 0}]}\n');
-    if(transID == 23) socket.write('{"cmd":"setTagsSubscribe", "transID": '+transID++ +', "deviceUid":"1", "tags":["0"]}');
+    if(transID == 23) socket.write('{"cmd":"setTagsSubscribe", "transID": '+transID++ +', "deviceUid":"1", "tags":["0","4"]}');
     dataObj = JSON.parse(data.toString());
     if(dataObj.cmd == 'asyncTagsValues'){
       socket.write('{"cmd":"asyncTagsValues", "transID":0}');

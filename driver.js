@@ -73,7 +73,6 @@ const errOptionsValidFailTxt		= 'Option value not valid';
 const errNameAbsentTxt		  		= 'Name is absent in request';
 const errIdAbsentTxt		  	  	= 'ID is absent in request';
 const errWrongTypeTxt				= 'Wrong type';
-const errOptionIdAbsentTxt			= 'Option ID absent';
 const errOptionNameAbsentTxt		= 'Option name absent';
 const errSelectValuesAbsentTxt		= 'Select values absent';
 const errUidListTxt					= 'ID list read fail';
@@ -205,7 +204,6 @@ class ObjList {
 		}
 	}
 	setItem(dataObj){
-		//HERE
 		if(this.list[dataObj.uid]){
 			let warning = "";
 			if(dataObj.options){
@@ -220,7 +218,7 @@ class ObjList {
 							warning += errOptionsValidFailTxt + ",";
 						}
 					}else{
-						warning += errOptionsNotFoundTxt + ",";
+						warning += errOptionsNotFoundTxt + ": " + optionItem + ",";
 					}
 				}
 			}
@@ -409,10 +407,14 @@ const tls = require('tls');
 const process = require('process');
 let server={};
 server.connected = false;
+server.dataEventFlag = false;
 
 const serverReconnectTimeout = 5000;
 setInterval(tryConnectServer, serverReconnectTimeout);
 tryConnectServer();
+
+const serverNodataReconnectTimeout = 20000;
+setInterval(serverNodataReconnect, serverNodataReconnectTimeout);
 
 function tryConnectServer(){
   if(!server.connected){
@@ -424,7 +426,7 @@ function tryConnectServer(){
         port: orangeScadaPort,
         rejectUnauthorized: false,
       };
-      server.socket = tls.connect(options,() =>{
+      server.socket = tls.connect(options, () =>{
         logger(serverConnectedTxt);
         handShake();
       });
@@ -436,7 +438,8 @@ function tryConnectServer(){
       });
     }
     server.socket.on('data', (data) => {
-			parseRequest(data);
+		parseRequest(data);
+		server.dataEventFlag = true;
     });
     server.socket.on('close',(code, reason) => {
       logger(errServerConnectClosedTxt);
@@ -449,6 +452,14 @@ function tryConnectServer(){
       server.socket.destroy();
     });
   };
+}
+
+function serverNodataReconnect(){
+	if (server.connected && !server.dataEventFlag){
+		server.connected=false;
+		server.socket.destroy();		
+	}
+	server.dataEventFlag = false;
 }
 
 function sendToSocket(data, warning){
@@ -673,6 +684,11 @@ function getTags(dataObj){
 
 // Common handler for tag requests
 function commonTagHandler(dataObj, method){
+	if((method == 'getItem') && (!dataObj.deviceUid || !dataObj.uid)){
+		let tagList = new ObjList({}, 'tags');
+		commonHandler(dataObj, tagList[method].bind(tagList));
+		return;
+	}
 	if(dataObj.deviceUid){
 		if(config.devices[dataObj.deviceUid] && config.devices[dataObj.deviceUid].tags){
 			let tagList = new ObjList(config.devices[dataObj.deviceUid].tags, 'tags');
@@ -681,12 +697,7 @@ function commonTagHandler(dataObj, method){
 			errHandler(errIdNotFoundTxt, dataObj);
 		}
 	}else{
-		if(method == 'getItem'){
-			let tagList = new ObjList({}, 'tags');
-			commonHandler(dataObj, tagList[method].bind(tagList));
-		}else{
-			errHandler(errIdAbsentTxt, dataObj);
-		}
+		errHandler(errIdAbsentTxt, dataObj);
 	}
 }
 
@@ -729,7 +740,6 @@ function setTagsSubscribe(dataObj){
 
 // handler invoke from customDriver on data change
 function subscribeHandler(dataObj){
-	console.log("subscribeHandler, data.values= ", dataObj);
 	dataObj.cmd = 'asyncTagsValues';
 	dataObj.transID = 0; // ?????
 	sendToSocket(dataObj);
