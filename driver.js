@@ -1,18 +1,21 @@
 'use strict'
 
-//*****************************************************************
+//**************************************************************************
 // This is an example of API modbus driver for OrangeScada
 // You can implement any other drives, using this code as template.
-// For implement features of your own deiver, please go to customDriver module.
+// For implement features of your own driver, please create custom module.
+// In this example this module is modbusTCPDriver.js
 // Full description of all API functions you can get from cite
 // https://www.orangescada.ru/docs/
 //
 // Version 1.0
 // Author: OrangeScada company
 //
-//*****************************************************************
+//**************************************************************************
 
 
+// Include custom driver
+const CustomDriver = require('./modbusTCPDriver.js');
 
 //*****************************************************************
 // LOGGER PART
@@ -21,7 +24,10 @@
 
 const log = true;
 
-// Log to console
+/**
+ * logger - Log message to console
+ * @param {string} message 
+ */
 function logger(message){
 	if(log) console.log(message);
 }
@@ -32,9 +38,12 @@ function logger(message){
 //*****************************************************************
 
 const fs=require('fs'),
-path = require('path'),
-CustomDriver = require('./customDriver.js');
+path = require('path');
 
+/**
+ * getConfig - returns config object from config file
+ * @returns {object}
+ */
 function getConfig(){
 	const root = path.dirname(require.main.filename);
 	const configJSON = fs.readFileSync(root+'/driverConfig.json', 'utf-8');
@@ -42,18 +51,22 @@ function getConfig(){
 	try{
 		config = JSON.parse(configJSON);
 	}catch(e){
-		logger('Error JSON parse config file: '+e);
+		logger('Error JSON parse config file: ' + e);
 	}
 	return config;
 }
 
+/**
+ * setConfig - write config object to config file
+ * @param {object} config - config object
+ */
 function setConfig(config) {
 	let configJSON = JSON.stringify(config, null, 2);
 	const root = path.dirname(require.main.filename);
 	try{
 		fs.writeFileSync(root+'/driverConfig.json', configJSON, {encoding: "utf8"});
 	}catch(e){
-		logger('Error write config file: '+e);
+		logger('Error write config file: ' + e);
 	}
 }
 
@@ -76,14 +89,28 @@ const errWrongTypeTxt				= 'Wrong type';
 const errOptionNameAbsentTxt		= 'Option name absent';
 const errSelectValuesAbsentTxt		= 'Select values absent';
 const errUidListTxt					= 'ID list read fail';
+const errItemNotEditable			= 'Item is not editable';
 
+/**
+ * Common class for list of nodes, devices or tags
+ */
 class ObjList {
+	/**
+	 * constructor of class
+	 * @param {object} list - list of nodes, devices or tags
+	 * @param {string} itemType - nodes|devices|tags
+	 * @param {object} nodes - list of nodes (necessary for devices itemtype)
+	 */
 	constructor(list, itemType, nodes){
 		this.list = list;
 		this.itemType = itemType;
 		this.nodes = nodes;
 	}
-	// getListArray function transfer list object to array
+	
+	/**
+	 * getListArray - transfers list object to array
+	 * @returns {array} - array of objects [{name: value, uid: value}]
+	 */
 	getListArray(){
 		let res = [];
 		for(let item in this.list){
@@ -94,14 +121,26 @@ class ObjList {
 		};
 		return res;
 	}
+
+	/**
+	 * getNodes - creates answer to getNodes request
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	getNodes(dataObj){
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID, nodes:this.getListArray()};
 		return {answer:answer, error:""};
 	}
+
+	/**
+	 * getDevices - creates answer to getDevices request
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	getDevices(dataObj){
 		let devices = [];
 		for(let item in this.list){
-			if(!dataObj.uid || (this.list[item].nodeUid == dataObj.uid)){//в запросе uid, в доках nodeUid
+			if(!dataObj.uid || (this.list[item].nodeUid == dataObj.uid)){
 				let deviceItem = {};
 				deviceItem.name = this.list[item].name;
 				deviceItem.uid = item;
@@ -112,29 +151,47 @@ class ObjList {
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID, devices: devices};
 		return {answer:answer, error:""};
 	}
+
+	/**
+	 * pingItem - creates answer to ping request
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	pingItem(dataObj){
 		if(this.list[dataObj.uid]){
 			let answer = {};
 			if(this.itemType == 'nodes'){
 				answer = {cmd:dataObj.cmd, transID: dataObj.transID};
 			}else{
-				answer = {cmd:dataObj.cmd, transID: dataObj.transID, active: this.list[dataObj.uid].active};
+				let deviceStatus = customDriver.getDeviceStatus(dataObj);
+				if(deviceStatus.error){
+					answer = {cmd:dataObj.cmd, transID: dataObj.transID, active: deviceStatus.active, errorTxt: deviceStatus.error};
+				}else{
+					answer = {cmd:dataObj.cmd, transID: dataObj.transID, active: deviceStatus.active};
+				}
 			}
 			return {answer:answer, error:""};
 		}else{
 			return {error:errIdNotFoundTxt}
 		}
 	}
-	// getNodeOptionsArray function transfer config.nodes.options object to array
+
+	/**
+	 * getOptionsToArray - function transfers config options and item own options to array
+	 * @param {string} uid - node unique id
+	 * @returns {array}
+	 */
 	getOptionsToArray(uid){
 		let res = [];
-		let items = this.list[uid].options;
+		let optionsOwn = this.list[uid].options;
+		let optionsScheme = config.optionsScheme && config.optionsScheme[this.itemType] ? config.optionsScheme[this.itemType] : null;
+		let items = Object.assign({}, optionsScheme, optionsOwn);
 		if(items){
 			for(let item in items){
 				let itemOption={};
-				let optionsScheme = config.optionsScheme && config.optionsScheme[this.itemType] && config.optionsScheme[this.itemType][item] ? config.optionsScheme[this.itemType][item] : null;
-				if(optionsScheme){
-					itemOption = Object.assign({},optionsScheme,items[item]);
+				let optionsSchemeItem = config.optionsScheme && config.optionsScheme[this.itemType] && config.optionsScheme[this.itemType][item] ? config.optionsScheme[this.itemType][item] : null;
+				if(optionsSchemeItem){
+					itemOption = Object.assign({},optionsSchemeItem,items[item]);
 					itemOption.uid = item;
 					if(itemOption.type == 'select'){
 						itemOption.selectValues = this.getSelectValuesToArray(itemOption.selectValues);
@@ -145,6 +202,12 @@ class ObjList {
 		};
 		return res;
 	}
+
+	/**
+	 * getSelectValuesToArray - transfers selectValues object to array
+	 * @param {object} selectValues - object {selectID: selectName, ...}
+	 * @returns {array}
+	 */
 	getSelectValuesToArray(selectValues){
 		let res = [];
 		for(let key in selectValues){
@@ -155,6 +218,11 @@ class ObjList {
 		}
 		return res;
 	}
+
+	/**
+	 * getDefaultOptionsToArray - returns array of item (nodes|devices|tags) scheme options
+	 * @returns {array}
+	 */
 	getDefaultOptionsToArray(){
 		let res = [];
 		let optionsScheme = config.optionsScheme && config.optionsScheme[this.itemType] ? config.optionsScheme[this.itemType] : null;
@@ -170,6 +238,12 @@ class ObjList {
 		}
 		return res;
 	}
+
+	/**
+	 * getItem - creates answer to getNode|getDevice|getTag requests
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	getItem(dataObj){
 		if(!dataObj.uid){
 			let answer = {cmd:dataObj.cmd, transID: dataObj.transID, options: this.getDefaultOptionsToArray()};
@@ -184,6 +258,13 @@ class ObjList {
 			return {error:errIdNotFoundTxt}
 		}
 	}
+
+	/**
+	 * isValueValid - checks if param value is valid
+	 * @param {object} optionItem - option item parameters object 
+	 * @param {*} value - tested value
+	 * @returns {boolean}
+	 */
 	isValueValid(optionItem, value){
 		switch (optionItem.type) {
 			case 'varchar':
@@ -195,7 +276,7 @@ class ObjList {
 			case 'number':
 				if(typeof value !== 'number') return false;
 				return (optionItem.minValue === undefined || value >= optionItem.minValue) &&
-							 (optionItem.maxValue === undefined || value <= optionItem.maxValue);
+					   (optionItem.maxValue === undefined || value <= optionItem.maxValue);
 				break;
 			case 'select':
 				return optionItem.selectValues[value];
@@ -203,7 +284,14 @@ class ObjList {
 			default: return false;
 		}
 	}
+
+	/**
+	 * setItem - sets parameters and creates answer to setNode|setDevice|setTag requests
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	setItem(dataObj){
+		if(!isItemsEditable) return {error:errItemNotEditable};
 		if(this.list[dataObj.uid]){
 			let warning = "";
 			if(dataObj.options){
@@ -211,37 +299,44 @@ class ObjList {
 					let optionItemKey = Object.keys(item)[0];
 					let schemeOptionItem = config.optionsScheme[this.itemType][optionItemKey];
 					let optionItem = this.list[dataObj.uid].options[optionItemKey];
-					if(optionItem && schemeOptionItem){
-						if(this.isValueValid(schemeOptionItem,item[optionItemKey])){
+					if(schemeOptionItem){
+						if(!optionItem){
+							this.list[dataObj.uid].options[optionItemKey] = {};
+							optionItem = this.list[dataObj.uid].options[optionItemKey];
+						}
+						if(this.isValueValid(schemeOptionItem,item[optionItemKey]) || (item[optionItemKey] === "")){
 							optionItem.currentValue = item[optionItemKey];
 						}else{
 							warning += errOptionsValidFailTxt + ",";
 						}
 					}else{
-						warning += errOptionsNotFoundTxt + ": " + optionItem + ",";
+						warning += errOptionsNotFoundTxt + ": " + optionItemKey + ",";
 					}
 				}
 			}
 			let propsWarning = this.appendProps(dataObj, this.list[dataObj.uid]);
 			if(propsWarning) warning += propsWarning + ",";
 			let answer = {cmd:dataObj.cmd, transID: dataObj.transID};
-			return {answer:answer, error:"", warning:this.correctWarningText(warning), setConfig: true};
+			if(warning) logger(this.correctWarningText(warning));
+			return {answer:answer, error:"", setConfig: true};
 		}else{
 			return {error:errIdNotFoundTxt}
 		}
 	}
-	selectValuesToJson(selectValues){
-		let res = {};
-		for(let item of selectValues){
-				if(item.name && item.value){
-					res[item.value] = item.name;
-				}
-		}
-		return res;
-	}
+
+	/**
+	 * checkType - returns true if type name is valid
+	 * @param {string} type - type name
+	 * @returns {boolean}
+	 */
 	checkType(type){
 		return ['number','select','bool','varchar'].includes(type);
 	}
+
+	/**
+	 * getNewNodeId - generates new unique id for nodes|devices|tags list
+	 * @returns {int}
+	 */
 	getNewNodeId(){
 		let maxId=0;
 		for(let item in this.list){
@@ -250,10 +345,15 @@ class ObjList {
 		}
 		return maxId + 1;
 	}
+
+	/**
+	 * addItem - adds new item for nodes|devices|tags, creates answer
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	addItem(dataObj){
-		if(!dataObj.name){
-			return {error:errNameAbsentTxt};
-		}
+		if(!isItemsEditable) return {error:errItemNotEditable};
+		if(!dataObj.name) return {error:errNameAbsentTxt};
 		let newItem = {};
 		let newItemOptions = {};
 		newItem.name = dataObj.name;
@@ -295,11 +395,31 @@ class ObjList {
 			return {error:setAnswer.error};
 		}
 	}
+
+	/**
+	 * correctWarningText - kills komma at the end of warning string
+	 * @param {string} warning 
+	 * @returns {string}
+	 */
 	correctWarningText(warning){
 		if(warning) return warning.slice(0,-1);
 		return null;
 	}
+
+	/**
+	 * deleteItem - removes item in nodes|devices|tags list, creates answer
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	deleteItem(dataObj){
+		if(!isItemsEditable) return {error:errItemNotEditable};
+		if(dataObj.cmd == 'deleteNode'){
+			let deviceUids = [];
+			for(let deviceId in deviceList.list){
+				if(deviceList.list[deviceId].nodeUid == dataObj.uid) deviceUids.push(deviceId); 
+			}
+			if(deviceUids) deviceList.deleteItem({'cmd': 'deleteDevice','transID':0, 'uid': deviceUids});
+		}
 		let deleteUids = dataObj.uid;
 		let warning = "";
 		if(!deleteUids){
@@ -315,6 +435,12 @@ class ObjList {
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID};
 		return {answer:answer, error:"", warning:this.correctWarningText(warning), setConfig: true};
 	}
+
+	/**
+	 * getOptionsValuesToObject - converts options array to object {optionName: currentValue, ...}
+	 * @param {array} items - array of options
+	 * @returns {object}
+	 */
 	getOptionsValuesToObject(items){
 		let res = {};
 		for(let item in items){
@@ -322,10 +448,17 @@ class ObjList {
 		}
 		return res;
 	}
+
+	/**
+	 * appendProps - check item properties and transfers it to container
+	 * @param {object} props 
+	 * @param {object} container 
+	 * @returns {string} warning text
+	 */
 	appendProps(props, container){
 		let propsWarning = "";
 		[{"propName":"name","type":"varchar"},
-		 {"propName":"type","type":"select","selectValues":{"bool":"bool","int":"int","float":"float","datetime":"datetime"}},
+		 {"propName":"type","type":"select","selectValues":{"bool":"bool","int":"int","float":"float","datetime":"datetime","string":"string"}},
 		 {"propName":"address","type":"number"},
 		 {"propName":"read","type":"bool"},
 		 {"propName":"write","type":"bool"}].map((prop)=>{
@@ -339,6 +472,12 @@ class ObjList {
 		});
 		return propsWarning;
 	}
+
+	/**
+	 * getTags - returns list of tags
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	getTags(dataObj){
 		let device = this.list[dataObj.deviceUid];
 		if(!device){
@@ -360,14 +499,20 @@ class ObjList {
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID, tags:res};
 		return {answer:answer, error:""};
 	}
+
+	/**
+	 * setTagsSubscribe - method sets/unsets subscribed flag, returns answer
+	 * @param {object} dataObj - request object
+	 * @returns {object}
+	 */
 	setTagsSubscribe(dataObj){
-		//HERE
 		for (let item in this.list){
 			this.list[item].subscribed = dataObj.tags.includes(item);
 		}
 		let answer = {cmd:dataObj.cmd, transID: dataObj.transID};
 		return {answer:answer, error:"", setConfig: true};
 	}
+
 }
 
 
@@ -380,9 +525,9 @@ logger('Get init options');
 let config = getConfig();
 let nodeList = new ObjList(config.nodes, 'nodes');
 let deviceList = new ObjList(config.devices, 'devices', config.nodes);
-if(!config) return;
-const {orangeScadaPort, orangeScadaHost, ssl, uid, password} = config.driver;
-let customDriver = new CustomDriver(nodeList, deviceList, config, subscribeHandler);
+if(!config) process.exit(1);
+const {orangeScadaPort, orangeScadaHost, ssl, uid, password, version, isItemsEditable} = config.driver;
+let customDriver = new CustomDriver(deviceList, subscribeHandler, getConfig, setConfig);
 
 
 //*****************************************************************
@@ -408,6 +553,7 @@ const process = require('process');
 let server={};
 server.connected = false;
 server.dataEventFlag = false;
+server.currentTransID = 0;
 
 const serverReconnectTimeout = 5000;
 setInterval(tryConnectServer, serverReconnectTimeout);
@@ -416,6 +562,11 @@ tryConnectServer();
 const serverNodataReconnectTimeout = 20000;
 setInterval(serverNodataReconnect, serverNodataReconnectTimeout);
 
+const maxTransID = 65535;
+
+/**
+ * tryConnectServer - connect trying function, data|close|error events handlers
+ */
 function tryConnectServer(){
   if(!server.connected){
     logger(tryConnectTxt);
@@ -454,6 +605,9 @@ function tryConnectServer(){
   };
 }
 
+/**
+ * serverNodataReconnect - disconnect alarm function, run if no requests in serverNodataReconnectTimeout 
+ */
 function serverNodataReconnect(){
 	if (server.connected && !server.dataEventFlag){
 		server.connected=false;
@@ -462,13 +616,20 @@ function serverNodataReconnect(){
 	server.dataEventFlag = false;
 }
 
+/**
+ * sendToSocket - function for sending data to socket
+ * @param {object} data - sending data object 
+ * @param {error} warning - warning text 
+ */
 function sendToSocket(data, warning){
 	if(!server.connected) return;
 	if(warning) data.errorTxt = warning;
 	let dataStr = JSON.stringify(data);
-	logger(answerTxt+' '+dataStr);
+	logger(answerTxt + ' ' + dataStr);
 	server.socket.write(dataStr+'\n\r');
 }
+
+// Exit on user halt application 
 
 process.stdin.resume();
 
@@ -482,19 +643,25 @@ process.on('SIGINT', () => {
 
 // API requests
 
-// Client first connect
+/**
+ * handShake - sending handshake data on connect to Orangescada server
+ */
 function handShake(){
 	let req;
 	if(password){
-		req = {cmd: 'connect', uid: uid, password: password, transID: 0};
+		req = {cmd: 'connect', uid: uid, password: password, version: version, transID: 0};
 	}else{
-		req = {cmd: 'connect', uid: uid, transID: 0};
+		req = {cmd: 'connect', uid: uid, version: version, transID: 0};
 	}
 	sendToSocket(req);
 };
 
 // Parse server requests, execute handlers
 
+/**
+ * parseRequest - 
+ * @param {object} data - parsing requests, get and execute handler
+ */
 function parseRequest(data){
 	let dataStr = data.toString().split('\n');
 	for(let item of dataStr){
@@ -510,7 +677,8 @@ function parseRequest(data){
 		if(!dataObj) return;
 	  let handler = getHandler(dataObj.cmd);
 		if(handler){
-			handler(dataObj)
+			handler(dataObj);
+			setCurrentTransID(dataObj);
 		}else{
 			errHandler(errCmdNotRecognizedTxt);
 		}
@@ -519,6 +687,11 @@ function parseRequest(data){
 
 // Maping handler for request
 
+/**
+ * getHandler - returns handler depend on request type
+ * @param {string} cmd - request name
+ * @returns {handler}
+ */
 function getHandler(cmd){
 	switch (cmd) {
 		case 'connect'		    			: return connectServer;
@@ -544,13 +717,15 @@ function getHandler(cmd){
 		case 'setTagsValues' 	  			: return setTagsValues;
 		case 'setTagsSubscribe'				: return setTagsSubscribe;
 		case 'asyncTagsValues'				: return asyncTagsValues;
-		case 'getEvent' 					: return getEvent;
 		default: return null;
 	}
 }
 
-// error handler
-
+/**
+ * errHandler - sends error data to socket
+ * @param {string} errorTxt - error text message
+ * @param {object} dataObj - request object
+ */
 function errHandler(errorTxt, dataObj){
 	logger('error answer');
 	let answer = {};
@@ -560,14 +735,18 @@ function errHandler(errorTxt, dataObj){
 	sendToSocket(answer);
 }
 
-// connectServer handler
-
+/**
+ * connectServer - connectServer handler
+ */
 function connectServer() {
 	logger('Connect '+commandRequestTxt);
 }
 
-// Common handler for requests
-
+/**
+ * socketCommunicate - common method answering to requests
+ * @param {object} res - answering result object
+ * @param {object} dataObj - request object
+ */
 function socketCommunicate(res, dataObj) {
 	if(res.error == ""){
 		sendToSocket(res.answer, res.warning);
@@ -577,120 +756,165 @@ function socketCommunicate(res, dataObj) {
 	}
 }
 
+/**
+ * commonHandler - common function for requests handling and call socketCommunicate for answering
+ * @param {object} dataObj - request object
+ * @param {handler} method - handler for answering
+ */
 function commonHandler(dataObj, method){
 	logger(dataObj.cmd + ' ' + commandRequestTxt);
 	let res = {};
-	let error = "";
 	if(!method){
 		res.answer = {cmd:dataObj.cmd, transID: dataObj.transID};
 		res.error = "";
-  }else{
+  	}else{
 		res = method(dataObj);
 	}
-  socketCommunicate(res, dataObj);
+  	socketCommunicate(res, dataObj);
 }
 
-// pingDriver command handler
-
+/**
+ * pingDriver command handler
+ * @param {object} dataObj - request object
+ */
 function pingDriver(dataObj){
 	commonHandler(dataObj);
 }
 
 
-//*****************************************************
+//**********************************************************************************************
 // You can pass getNodes|pingNode|getNode|setNode|addNode|deleteNode handlers implementation
-// if you have not group your devices to nodes. This is not necessary handlers.
-//*****************************************************
+// if you have not group your devices into nodes. This is not necessary handlers.
+//**********************************************************************************************
 
 
-// getNodes command handler
-
+/**
+ * getNodes command handler
+ * @param {object} dataObj - request object
+ */
 function getNodes(dataObj){
 	commonHandler(dataObj, nodeList.getNodes.bind(nodeList));
 }
 
-// pingNode command handler
-
+/**
+ * pingNode command handler
+ * @param {object} dataObj - request object
+ */
 function pingNode(dataObj){
 	commonHandler(dataObj, nodeList.pingItem.bind(nodeList));
 }
 
-// getNode command handler
-
+/**
+ * getNode command handler
+ * @param {object} dataObj - request object
+ */
 function getNode(dataObj){
 	commonHandler(dataObj, nodeList.getItem.bind(nodeList));
 }
 
-// setNode command handler
-
+/**
+ * setNode command handler
+ * @param {object} dataObj - request object
+ */
 function setNode(dataObj){
 	commonHandler(dataObj, nodeList.setItem.bind(nodeList));
 }
 
-// addNode command handler
-
+/**
+ * addNode command handler
+ * @param {object} dataObj - request object
+ */
 function addNode(dataObj){
 	commonHandler(dataObj, nodeList.addItem.bind(nodeList));
 }
 
-// deleteNode command handler
-
+/**
+ * deleteNode command handler
+ * @param {object} dataObj - request object
+ */
 function deleteNode(dataObj){
 	commonHandler(dataObj, nodeList.deleteItem.bind(nodeList));
 }
 
-// getDevices command handler
-
+/**
+ * getDevices command handler
+ * @param {object} dataObj - request object
+ */
 function getDevices(dataObj){
 	commonHandler(dataObj, deviceList.getDevices.bind(deviceList));
 }
 
-// pingDevice command handler
-
+/**
+ * pingDevice command handler
+ * @param {object} dataObj - request object
+ */
 function pingDevice(dataObj){
 	commonHandler(dataObj, deviceList.pingItem.bind(deviceList));
 }
 
-// getDevice command handler
-
+/**
+ * getDevice command handler
+ * @param {object} dataObj - request object
+ */
 function getDevice(dataObj){
 	commonHandler(dataObj, deviceList.getItem.bind(deviceList));
 }
 
-// setDevice command handler
-
+/**
+ * setDevice command handler
+ * @param {object} dataObj - request object
+ */
 function setDevice(dataObj){
 	commonHandler(dataObj, deviceList.setItem.bind(deviceList));
 }
 
-// addDevice command handler
-
+/**
+ * addDevice command handler
+ * @param {object} dataObj - request object
+ */
 function addDevice(dataObj){
 	commonHandler(dataObj, deviceList.addItem.bind(deviceList));
 }
 
-// deleteDevice command handler
-
+/**
+ * deleteDevice command handler
+ * @param {object} dataObj - request object
+ */
 function deleteDevice(dataObj){
 	commonHandler(dataObj, deviceList.deleteItem.bind(deviceList));
 }
 
-// getTags command handler
-
+/**
+ * getTags command handler
+ * @param {object} dataObj - request object
+ */
 function getTags(dataObj){
+	if(customDriver.updateTagListFromDevice(dataObj)){
+		config = getConfig();
+		nodeList = new ObjList(config.nodes, 'nodes');
+		deviceList = new ObjList(config.devices, 'devices', config.nodes);
+	}
 	commonHandler(dataObj, deviceList.getTags.bind(deviceList));
 }
 
-
-// Common handler for tag requests
+/**
+ * commonTagHandler - common handler for tag requests
+ * @param {object} dataObj - request object
+ * @param {string} method - method name
+ * @returns 
+ */
 function commonTagHandler(dataObj, method){
 	if((method == 'getItem') && (!dataObj.deviceUid || !dataObj.uid)){
 		let tagList = new ObjList({}, 'tags');
 		commonHandler(dataObj, tagList[method].bind(tagList));
 		return;
 	}
+
 	if(dataObj.deviceUid){
-		if(config.devices[dataObj.deviceUid] && config.devices[dataObj.deviceUid].tags){
+		if(config.devices[dataObj.deviceUid]){
+			if(!config.devices[dataObj.deviceUid].tags){
+				config.devices[dataObj.deviceUid].tags = {};
+			};
 			let tagList = new ObjList(config.devices[dataObj.deviceUid].tags, 'tags');
 			commonHandler(dataObj, tagList[method].bind(tagList));
 		}else{
@@ -701,62 +925,99 @@ function commonTagHandler(dataObj, method){
 	}
 }
 
-// getTag command handler
+/**
+ * getTag command handler
+ * @param {object} dataObj - request object
+ */
 function getTag(dataObj){
 	commonTagHandler(dataObj,'getItem');
 }
 
-// setTag command handler
-
+/**
+ * setTag command handler
+ * @param {object} dataObj - request object
+ */
 function setTag(dataObj){
 	commonTagHandler(dataObj,'setItem');
 }
 
-// addTag command handler
-
+/**
+ * addTag command handler
+ * @param {object} dataObj - request object
+ */
 function addTag(dataObj){
 	commonTagHandler(dataObj,'addItem');
 }
 
-// deleteTag command handler
-
+/**
+ * deleteTag command handler 
+ * @param {object} dataObj - request object
+ */
 function deleteTag(dataObj){
 	commonTagHandler(dataObj,'deleteItem');
 }
 
-// getTagsValues command handler
-
+/**
+ * getTagsValues command handler
+ * @param {object} dataObj - request object
+ */
 function getTagsValues(dataObj){
 	customDriver.getTagsValues(dataObj)
 	.then(res => socketCommunicate(res), res => socketCommunicate(res, dataObj));
 }
 
-// setTagsSubscribe command handler
-
+/**
+ * setTagsSubscribe command handler 
+ * @param {object} dataObj - request object
+ */
 function setTagsSubscribe(dataObj){
 	commonTagHandler(dataObj,'setTagsSubscribe');
 	customDriver.updateSubscribe();
 }
 
 // handler invoke from customDriver on data change
+/**
+ * HERE
+ * @param {object} dataObj - request object
+ */
 function subscribeHandler(dataObj){
 	dataObj.cmd = 'asyncTagsValues';
-	dataObj.transID = 0; // ?????
+	dataObj.transID = getSubscribTransID();
 	sendToSocket(dataObj);
 }
 
-// asyncTagsValues confirm
+/**
+ * getSubscribTransID - generate id packet for subsribed value change events
+ * @returns {int}
+ */
+function getSubscribTransID(){
+	let res = server.currentTransID;
+	while(Math.abs(res - server.currentTransID) < 10) res = parseInt(maxTransID * Math.random());
+	return res;
+}
+
+/**
+ * setCurrentTransID - saves current transID
+ * @param {object} dataObj - request object
+ */
+function setCurrentTransID(dataObj){
+	server.currentTransID = dataObj.transID;
+}
+
+
+/**
+ * asyncTagsValues - confirms server async data recive
+ * @param {object} dataObj - request object
+ */
 function asyncTagsValues(dataObj){
 	logger(dataObj.cmd + ' ' + commandRequestTxt);
 }
 
-// setTagsValues command handler
+/**
+ * setTagsValues command handler
+ * @param {object} dataObj - request object
+ */
 function setTagsValues(dataObj){
 	customDriver.setTagsValues(dataObj)
 	.then(res => socketCommunicate(res), res => socketCommunicate(res, dataObj));
-}
-
-// getEvent command handler
-
-function getEvent(dataObj){
 }
